@@ -37,9 +37,11 @@ class TravelPlanRequest(StrictModel):
 
     @field_validator("preferences", mode="before")
     @classmethod
-    def normalize_preferences(cls, value: list[str]) -> list[str]:
+    def normalize_preferences(cls, value: object) -> object:
         """去除偏好项的首尾空白。"""
 
+        if not isinstance(value, list):
+            return value
         return [item.strip() if isinstance(item, str) else item for item in value]
 
     @field_validator("departure_date")

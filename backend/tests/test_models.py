@@ -172,6 +172,20 @@ def test_travel_plan_request_rejects_more_than_twelve_preferences():
     assert "preferences" in str(exc_info.value)
 
 
+@pytest.mark.parametrize("preferences", [None, "亲子"])
+def test_travel_plan_request_rejects_non_list_preferences_with_validation_error(preferences):
+    with pytest.raises(ValidationError) as exc_info:
+        TravelPlanRequest(
+            origin="上海",
+            destination="杭州",
+            departure_date=date.today(),
+            travelers=2,
+            preferences=preferences,
+        )
+
+    assert "preferences" in str(exc_info.value)
+
+
 @pytest.mark.parametrize(("days", "nights"), [(1, 0), (14, 13)])
 def test_travel_plan_request_derives_nights_from_days(days, nights):
     request = TravelPlanRequest(
