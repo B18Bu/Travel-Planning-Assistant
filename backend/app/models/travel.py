@@ -41,7 +41,7 @@ class TravelPlanRequest(StrictModel):
         """去除偏好项的首尾空白。"""
 
         if not isinstance(value, list):
-            return value
+            raise ValueError("偏好必须是列表")
         return [item.strip() if isinstance(item, str) else item for item in value]
 
     @field_validator("departure_date")
