@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import Annotated
+from datetime import date, datetime
+from enum import StrEnum
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
 class StrictModel(BaseModel):
@@ -13,6 +14,111 @@ class StrictModel(BaseModel):
 
 
 NonEmptyText = Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class DataStatus(StrEnum):
+    """数据状态。"""
+
+    realtime = "realtime"
+    cached = "cached"
+    knowledge_base = "knowledge_base"
+    degraded = "degraded"
+
+
+class SourceType(StrEnum):
+    """来源类型。"""
+
+    weather_api = "weather_api"
+    map_api = "map_api"
+    poi_api = "poi_api"
+    knowledge_base = "knowledge_base"
+
+
+class WeatherRiskLevel(StrEnum):
+    """天气风险等级。"""
+
+    low = "low"
+    medium = "medium"
+    high = "high"
+
+
+class Source(StrictModel):
+    """外部或知识库来源合同。"""
+
+    name: NonEmptyText
+    type: SourceType
+    data_status: DataStatus
+    source_updated_at: datetime | None = None
+    retrieved_at: datetime
+    url: HttpUrl | None = None
+    knowledge_version: NonEmptyText | None = None
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> "Source":
+        """校验来源状态、时间和知识库版本之间的约束。"""
+
+        if self.data_status in {DataStatus.realtime, DataStatus.cached}:
+            if self.source_updated_at is None:
+                raise ValueError("实时或缓存来源必须提供上游更新时间")
+            if self.source_updated_at >= self.retrieved_at:
+                raise ValueError("上游更新时间必须早于获取时间")
+        if self.type is SourceType.knowledge_base:
+            if self.data_status is not DataStatus.knowledge_base:
+                raise ValueError("知识库来源的数据状态必须为 knowledge_base")
+            if self.knowledge_version is None:
+                raise ValueError("知识库来源必须提供版本")
+        elif self.knowledge_version is not None:
+            raise ValueError("非知识库来源不得提供知识库版本")
+        if self.url is not None and self.url.scheme != "https":
+            raise ValueError("来源 URL 仅允许 HTTPS")
+        return self
+
+
+class NormalizedLocation(StrictModel):
+    """标准化地点事实。"""
+
+    name: NonEmptyText
+    location: str | None = None
+    adcode: str | None = None
+
+
+class PoiCandidate(StrictModel):
+    """候选 POI 基础事实。"""
+
+    name: NonEmptyText
+    address: str | None = None
+    location: str | None = None
+    category: NonEmptyText
+    tags: list[NonEmptyText] = Field(default_factory=list)
+    source_ids: list[NonEmptyText] = Field(min_length=1)
+
+
+class DailyWeather(StrictModel):
+    """单日天气基础事实。"""
+
+    date: date
+    condition: NonEmptyText
+    temp_min: int | None = None
+    temp_max: int | None = None
+    risk_level: WeatherRiskLevel
+    activity_suitability: str | None = None
+    equipment_suggestions: list[NonEmptyText] = Field(default_factory=list)
+
+
+class RouteEstimate(StrictModel):
+    """路线估算基础事实。"""
+
+    distance_meters: int = Field(ge=0)
+    duration_minutes: int = Field(ge=0)
+    is_estimate: Literal[True] = True
+
+
+class DailyArea(StrictModel):
+    """每日活动区域基础事实。"""
+
+    day: int = Field(ge=1)
+    area: NonEmptyText
+    activity_window: str | None = None
 
 
 class TravelPlanRequest(StrictModel):

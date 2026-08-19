@@ -1,9 +1,20 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
 
-from app.models.travel import TravelPlanRequest
+from app.models.travel import (
+    DailyArea,
+    DailyWeather,
+    DataStatus,
+    NormalizedLocation,
+    PoiCandidate,
+    RouteEstimate,
+    Source,
+    SourceType,
+    TravelPlanRequest,
+    WeatherRiskLevel,
+)
 
 
 def test_travel_plan_request_applies_defaults_and_derives_nights():
@@ -202,3 +213,129 @@ def test_travel_plan_request_nights_is_read_only():
 
     with pytest.raises(AttributeError):
         request.nights = 3
+
+
+def test_source_accepts_realtime_with_ordered_timestamps():
+    source = Source(
+        name="天气服务",
+        type=SourceType.weather_api,
+        data_status=DataStatus.realtime,
+        source_updated_at=datetime(2026, 8, 19, 10),
+        retrieved_at=datetime(2026, 8, 19, 10, 1),
+        url="https://weather.example.com",
+    )
+
+    assert source.model_dump()["data_status"] == DataStatus.realtime
+
+
+@pytest.mark.parametrize("data_status", [DataStatus.realtime, DataStatus.cached])
+def test_source_requires_upstream_time_for_realtime_or_cached(data_status):
+    with pytest.raises(ValidationError):
+        Source(
+            name="天气服务",
+            type=SourceType.weather_api,
+            data_status=data_status,
+            retrieved_at=datetime(2026, 8, 19, 10),
+        )
+
+
+def test_source_requires_knowledge_version_for_knowledge_base():
+    with pytest.raises(ValidationError):
+        Source(
+            name="知识库",
+            type=SourceType.knowledge_base,
+            data_status=DataStatus.knowledge_base,
+            retrieved_at=datetime(2026, 8, 19, 10),
+        )
+
+
+def test_source_requires_knowledge_base_status_for_knowledge_source():
+    with pytest.raises(ValidationError):
+        Source(
+            name="知识库",
+            type=SourceType.knowledge_base,
+            data_status=DataStatus.cached,
+            knowledge_version="v1",
+            retrieved_at=datetime(2026, 8, 19, 10),
+        )
+
+
+def test_source_rejects_version_on_non_knowledge_source():
+    with pytest.raises(ValidationError):
+        Source(
+            name="地图服务",
+            type=SourceType.map_api,
+            data_status=DataStatus.realtime,
+            source_updated_at=datetime(2026, 8, 19, 10),
+            retrieved_at=datetime(2026, 8, 19, 10, 1),
+            knowledge_version="v1",
+        )
+
+
+def test_source_rejects_non_https_url():
+    with pytest.raises(ValidationError):
+        Source(
+            name="地图服务",
+            type=SourceType.map_api,
+            data_status=DataStatus.realtime,
+            source_updated_at=datetime(2026, 8, 19, 10),
+            retrieved_at=datetime(2026, 8, 19, 10, 1),
+            url="http://map.example.com",
+        )
+
+
+def test_domain_fact_models_serialize_successfully():
+    location = NormalizedLocation(name="西湖", location="30,120", adcode="330106")
+    poi = PoiCandidate(
+        name="断桥",
+        address="西湖边",
+        category="景点",
+        tags=["湖景"],
+        source_ids=["source-1"],
+    )
+    weather = DailyWeather(
+        date=date(2026, 8, 20),
+        condition="晴",
+        temp_min=24,
+        temp_max=32,
+        risk_level=WeatherRiskLevel.low,
+        equipment_suggestions=["遮阳伞"],
+    )
+    route = RouteEstimate(distance_meters=1200, duration_minutes=20)
+    area = DailyArea(day=1, area="西湖景区", activity_window="上午")
+
+    assert location.model_dump()["name"] == "西湖"
+    assert poi.model_dump()["source_ids"] == ["source-1"]
+    assert weather.model_dump()["risk_level"] == WeatherRiskLevel.low
+    assert route.model_dump()["is_estimate"] is True
+    assert area.model_dump()["day"] == 1
+
+
+def test_poi_rejects_empty_source_ids():
+    with pytest.raises(ValidationError):
+        PoiCandidate(name="断桥", category="景点", source_ids=[])
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (RouteEstimate, {"distance_meters": -1, "duration_minutes": 1}),
+        (DailyArea, {"day": 0, "area": "西湖景区"}),
+    ],
+)
+def test_domain_fact_models_reject_invalid_bounds(model, payload):
+    with pytest.raises(ValidationError):
+        model(**payload)
+
+
+@pytest.mark.parametrize("model", [NormalizedLocation, PoiCandidate, DailyWeather, RouteEstimate, DailyArea])
+def test_domain_fact_models_reject_commercial_fields(model):
+    payloads = {
+        NormalizedLocation: {"name": "西湖"},
+        PoiCandidate: {"name": "断桥", "category": "景点", "source_ids": ["source-1"]},
+        DailyWeather: {"date": date(2026, 8, 20), "condition": "晴", "risk_level": WeatherRiskLevel.low},
+        RouteEstimate: {"distance_meters": 1, "duration_minutes": 1},
+        DailyArea: {"day": 1, "area": "西湖景区"},
+    }
+    with pytest.raises(ValidationError):
+        model(**payloads[model], rating=5, price=100)
