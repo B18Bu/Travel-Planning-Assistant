@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
@@ -40,6 +40,15 @@ class WeatherRiskLevel(StrEnum):
     low = "low"
     medium = "medium"
     high = "high"
+
+
+class AgentStatus(StrEnum):
+    """专业 Agent 的执行状态。"""
+
+    success = "success"
+    partial = "partial"
+    degraded = "degraded"
+    failed = "failed"
 
 
 class Source(StrictModel):
@@ -117,6 +126,114 @@ class DailyArea(StrictModel):
     day: int = Field(ge=1)
     area: NonEmptyText
     activity_window: str | None = None
+
+
+class WeatherPlanData(StrictModel):
+    """天气 Agent 的规划结果。"""
+
+    destination: NonEmptyText
+    daily: list[DailyWeather] = Field(min_length=1)
+    constraints: list[NonEmptyText] = Field(default_factory=list)
+
+
+class RoutePlanData(StrictModel):
+    """路线 Agent 的规划结果。"""
+
+    origin: NonEmptyText
+    destination: NonEmptyText
+    round_trip: RouteEstimate | None = None
+    daily_areas: list[DailyArea] = Field(min_length=1)
+    weather_adjusted: bool
+
+
+class LodgingCandidate(StrictModel):
+    """住宿候选项。"""
+
+    poi: PoiCandidate
+    facilities: list[NonEmptyText] = Field(default_factory=list)
+    suitable_for: list[NonEmptyText] = Field(default_factory=list)
+    commute_note: str | None = None
+    recommendation_reason: str | None = None
+
+
+class LodgingPlanData(StrictModel):
+    """住宿 Agent 的规划结果。"""
+
+    nights: int = Field(ge=0)
+    recommended_area: NonEmptyText
+    candidates: list[LodgingCandidate] = Field(default_factory=list)
+    filter_suggestions: list[NonEmptyText] = Field(default_factory=list)
+
+
+class FoodCandidate(StrictModel):
+    """餐饮候选项。"""
+
+    poi: PoiCandidate
+    cuisine: str | None = None
+    specialties: list[NonEmptyText] = Field(default_factory=list)
+    suitable_for: list[NonEmptyText] = Field(default_factory=list)
+    dietary_notes: list[NonEmptyText] = Field(default_factory=list)
+    business_hours_note: str | None = None
+
+
+class DailyFoodPlan(StrictModel):
+    """单日餐饮规划。"""
+
+    day: int = Field(ge=1)
+    area: NonEmptyText
+    meal_period: str | None = None
+    candidates: list[FoodCandidate] = Field(default_factory=list)
+    filter_suggestions: list[NonEmptyText] = Field(default_factory=list)
+
+
+class FoodPlanData(StrictModel):
+    """餐饮 Agent 的规划结果。"""
+
+    daily_food: list[DailyFoodPlan] = Field(min_length=1)
+
+
+class ErrorDetail(StrictModel):
+    """面向调用方的受控错误信息。"""
+
+    code: NonEmptyText
+    message: NonEmptyText
+    retryable: bool
+
+
+ResultData = TypeVar("ResultData")
+
+
+class AgentResult(StrictModel, Generic[ResultData]):
+    """专业 Agent 的通用结果信封。"""
+
+    agent: NonEmptyText
+    status: AgentStatus
+    summary: NonEmptyText
+    data: ResultData | None = None
+    constraints: list[NonEmptyText] = Field(default_factory=list)
+    sources: list[Source] = Field(default_factory=list)
+    warnings: list[NonEmptyText] = Field(default_factory=list)
+    missing_fields: list[NonEmptyText] = Field(default_factory=list)
+    error: ErrorDetail | None = None
+    request_id: str
+    trace_id: str
+
+    @model_validator(mode="after")
+    def validate_status_contract(self) -> "AgentResult[ResultData]":
+        """校验状态、数据、缺失字段和错误之间的约束。"""
+
+        if self.status is AgentStatus.success:
+            if self.data is None or self.missing_fields or self.error is not None:
+                raise ValueError("success 结果必须含数据且不得含缺失字段或错误")
+        elif self.status is AgentStatus.partial:
+            if self.data is None or not self.missing_fields:
+                raise ValueError("partial 结果必须含数据和缺失字段")
+        elif self.status is AgentStatus.degraded:
+            if self.data is None or (not self.missing_fields and self.error is None):
+                raise ValueError("degraded 结果必须含数据及缺失字段或错误")
+        elif self.data is not None or not self.missing_fields or self.error is None:
+            raise ValueError("failed 结果不得含数据且必须含缺失字段和错误")
+        return self
 
 
 class TravelPlanRequest(StrictModel):
