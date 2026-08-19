@@ -404,40 +404,27 @@ def test_domain_fact_models_reject_commercial_fields(model):
         model(**payloads[model], rating=5, price=100)
 
 
-def test_agent_plan_models_construct_and_serialize():
-    poi = PoiCandidate(name="断桥", category="景点", source_ids=["source-1"])
-    weather_plan = WeatherPlanData(
-        destination="杭州",
-        daily=[
-            DailyWeather(
-                date=date(2026, 8, 20),
-                condition="晴",
-                risk_level=WeatherRiskLevel.low,
-            )
+def weather_plan_payload():
+    return {
+        "destination": "杭州",
+        "daily": [
+            {"date": date(2026, 8, 20), "condition": "晴", "risk_level": WeatherRiskLevel.low}
         ],
-        constraints=["午后防晒"],
-    )
+    }
+
+
+def poi_payload():
+    return {"name": "断桥", "category": "景点", "source_ids": ["source-1"]}
+
+
+def test_agent_plan_models_construct_and_serialize():
+    poi = PoiCandidate(**poi_payload())
+    weather_plan = WeatherPlanData(**weather_plan_payload())
     route_plan = RoutePlanData(
-        origin="上海",
-        destination="杭州",
-        round_trip=RouteEstimate(distance_meters=360000, duration_minutes=180),
-        daily_areas=[DailyArea(day=1, area="西湖景区")],
-        weather_adjusted=True,
+        origin="上海", destination="杭州", daily_areas=[DailyArea(day=1, area="西湖景区")], weather_adjusted=True
     )
-    lodging_plan = LodgingPlanData(
-        nights=2,
-        recommended_area="西湖景区",
-        candidates=[LodgingCandidate(poi=poi, facilities=["停车场"], suitable_for=["亲子"])],
-    )
-    food_plan = FoodPlanData(
-        daily_food=[
-            DailyFoodPlan(
-                day=1,
-                area="西湖景区",
-                candidates=[FoodCandidate(poi=poi, specialties=["东坡肉"])],
-            )
-        ]
-    )
+    lodging_plan = LodgingPlanData(nights=2, recommended_area="西湖景区", candidates=[LodgingCandidate(poi=poi)])
+    food_plan = FoodPlanData(daily_food=[DailyFoodPlan(day=1, area="西湖景区", candidates=[FoodCandidate(poi=poi)])])
 
     assert weather_plan.model_dump()["destination"] == "杭州"
     assert route_plan.model_dump()["weather_adjusted"] is True
@@ -448,157 +435,140 @@ def test_agent_plan_models_construct_and_serialize():
 @pytest.mark.parametrize(
     ("model", "payload"),
     [
-        (
-            WeatherPlanData,
-            {
-                "destination": "杭州",
-                "daily": [
-                    {
-                        "date": date(2026, 8, 20),
-                        "condition": "晴",
-                        "risk_level": WeatherRiskLevel.low,
-                    }
-                ],
-            },
-        ),
-        (
-            RoutePlanData,
-            {
-                "origin": "上海",
-                "destination": "杭州",
-                "daily_areas": [{"day": 1, "area": "西湖景区"}],
-                "weather_adjusted": False,
-            },
-        ),
+        (WeatherPlanData, {"destination": "杭州", "daily": []}),
+        (RoutePlanData, {"origin": "上海", "destination": "杭州", "daily_areas": [], "weather_adjusted": False}),
+        (LodgingPlanData, {"nights": -1, "recommended_area": "西湖景区"}),
+        (FoodPlanData, {"daily_food": []}),
+        (DailyFoodPlan, {"day": 0, "area": "西湖景区"}),
+    ],
+)
+def test_agent_plan_models_reject_required_field_boundaries(model, payload):
+    with pytest.raises(ValidationError):
+        model(**payload)
+
+
+def test_candidate_defaults_and_nested_poi_validation():
+    lodging = LodgingCandidate(poi=PoiCandidate(**poi_payload()))
+    food = FoodCandidate(poi=PoiCandidate(**poi_payload()))
+
+    assert lodging.facilities == []
+    assert lodging.suitable_for == []
+    assert lodging.commute_note is None
+    assert lodging.recommendation_reason is None
+    assert food.cuisine is None
+    assert food.specialties == []
+    assert food.suitable_for == []
+    assert food.dietary_notes == []
+    assert food.business_hours_note is None
+
+    lodging_with_details = LodgingCandidate(
+        poi=PoiCandidate(**poi_payload()),
+        facilities=["停车场"],
+        suitable_for=["亲子"],
+        commute_note="步行十分钟",
+        recommendation_reason="靠近景区",
+    )
+    food_with_details = FoodCandidate(
+        poi=PoiCandidate(**poi_payload()),
+        cuisine="杭帮菜",
+        specialties=["东坡肉"],
+        suitable_for=["家庭"],
+        dietary_notes=["可提供素食"],
+        business_hours_note="10:00 至 21:00",
+    )
+
+    assert lodging_with_details.commute_note == "步行十分钟"
+    assert lodging_with_details.recommendation_reason == "靠近景区"
+    assert food_with_details.cuisine == "杭帮菜"
+    assert food_with_details.specialties == ["东坡肉"]
+    assert food_with_details.suitable_for == ["家庭"]
+    assert food_with_details.dietary_notes == ["可提供素食"]
+    assert food_with_details.business_hours_note == "10:00 至 21:00"
+
+    with pytest.raises(ValidationError):
+        LodgingCandidate(poi={"name": "断桥", "category": "景点", "source_ids": []})
+    with pytest.raises(ValidationError):
+        FoodCandidate(poi={"name": "断桥", "category": "景点", "source_ids": []})
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (WeatherPlanData, weather_plan_payload()),
+        (RoutePlanData, {"origin": "上海", "destination": "杭州", "daily_areas": [{"day": 1, "area": "西湖景区"}], "weather_adjusted": False}),
+        (LodgingCandidate, {"poi": poi_payload()}),
         (LodgingPlanData, {"nights": 1, "recommended_area": "西湖景区"}),
+        (FoodCandidate, {"poi": poi_payload()}),
+        (DailyFoodPlan, {"day": 1, "area": "西湖景区"}),
         (FoodPlanData, {"daily_food": [{"day": 1, "area": "西湖景区"}]}),
     ],
 )
-def test_agent_plan_models_reject_commercial_fields(model, payload):
+def test_all_agent_plan_models_reject_commercial_fields(model, payload):
     with pytest.raises(ValidationError):
         model(**payload, price=100, rating=5, queue="排队中")
 
 
 @pytest.mark.parametrize(
-    ("status", "data", "missing_fields", "error"),
+    "payload",
     [
-        (AgentStatus.success, None, [], None),
-        (
-            AgentStatus.success,
-            {
-                "destination": "杭州",
-                "daily": [
-                    {
-                        "date": date(2026, 8, 20),
-                        "condition": "晴",
-                        "risk_level": WeatherRiskLevel.low,
-                    }
-                ],
-            },
-            ["daily"],
-            None,
-        ),
-        (
-            AgentStatus.partial,
-            {
-                "destination": "杭州",
-                "daily": [
-                    {
-                        "date": date(2026, 8, 20),
-                        "condition": "晴",
-                        "risk_level": WeatherRiskLevel.low,
-                    }
-                ],
-            },
-            [],
-            None,
-        ),
-        (
-            AgentStatus.degraded,
-            {
-                "destination": "杭州",
-                "daily": [
-                    {
-                        "date": date(2026, 8, 20),
-                        "condition": "晴",
-                        "risk_level": WeatherRiskLevel.low,
-                    }
-                ],
-            },
-            [],
-            None,
-        ),
-        (
-            AgentStatus.failed,
-            {
-                "destination": "杭州",
-                "daily": [
-                    {
-                        "date": date(2026, 8, 20),
-                        "condition": "晴",
-                        "risk_level": WeatherRiskLevel.low,
-                    }
-                ],
-            },
-            ["daily"],
-            ErrorDetail(code="UPSTREAM", message="服务不可用", retryable=True),
-        ),
-        (AgentStatus.failed, None, [], ErrorDetail(code="UPSTREAM", message="服务不可用", retryable=True)),
+        {"nights": 1, "recommended_area": "西湖景区", "candidates": [{"poi": poi_payload(), "price": 100}]},
+        {"daily_food": [{"day": 1, "area": "西湖景区", "candidates": [{"poi": poi_payload(), "queue": "排队中"}]}]},
     ],
 )
-def test_agent_result_rejects_invalid_status_combinations(status, data, missing_fields, error):
+def test_nested_agent_candidates_reject_commercial_fields(payload):
+    model = LodgingPlanData if "nights" in payload else FoodPlanData
+    with pytest.raises(ValidationError):
+        model(**payload)
+
+
+@pytest.mark.parametrize("status", list(AgentStatus))
+@pytest.mark.parametrize("has_data", [False, True])
+@pytest.mark.parametrize("has_missing", [False, True])
+@pytest.mark.parametrize("has_error", [False, True])
+def test_agent_result_status_combination_contract(status, has_data, has_missing, has_error):
+    data = WeatherPlanData(**weather_plan_payload()) if has_data else None
+    missing_fields = ["daily"] if has_missing else []
+    error = ErrorDetail(code="UPSTREAM", message="服务不可用", retryable=True) if has_error else None
+    is_valid = (
+        (status is AgentStatus.success and has_data and not has_missing and not has_error)
+        or (status is AgentStatus.partial and has_data and has_missing)
+        or (status is AgentStatus.degraded and has_data and (has_missing or has_error))
+        or (status is AgentStatus.failed and not has_data and has_missing and has_error)
+    )
+    payload = {
+        "agent": "weather",
+        "status": status,
+        "summary": "天气规划结果",
+        "data": data,
+        "missing_fields": missing_fields,
+        "error": error,
+        "request_id": "request-1",
+        "trace_id": "trace-1",
+    }
+
+    if is_valid:
+        assert AgentResult[WeatherPlanData](**payload).status is status
+    else:
+        with pytest.raises(ValidationError):
+            AgentResult[WeatherPlanData](**payload)
+
+
+def test_error_detail_has_only_controlled_fields():
+    assert set(ErrorDetail.model_fields) == {"code", "message", "retryable"}
+
+
+def test_agent_result_rejects_internal_error_fields():
     with pytest.raises(ValidationError):
         AgentResult[WeatherPlanData](
-            agent="weather",
-            status=status,
-            summary="天气规划结果",
-            data=data,
-            missing_fields=missing_fields,
-            error=error,
-            request_id="request-1",
-            trace_id="trace-1",
-        )
-
-
-def test_error_detail_rejects_internal_error_fields():
-    with pytest.raises(ValidationError):
-        ErrorDetail(
-            code="UPSTREAM",
-            message="服务不可用",
-            retryable=True,
-            stack="internal stack",
-            response_body="internal response",
+            agent="weather", status=AgentStatus.success, summary="天气规划结果", data=WeatherPlanData(**weather_plan_payload()),
+            request_id="request-1", trace_id="trace-1", exception="internal", stack="internal stack", raw_response="internal response"
         )
 
 
 def test_agent_result_accepts_degraded_result_without_degraded_field():
     result = AgentResult[WeatherPlanData](
-        agent="weather",
-        status=AgentStatus.degraded,
-        summary="天气服务部分不可用",
-        data=WeatherPlanData(
-            destination="杭州",
-            daily=[
-                DailyWeather(
-                    date=date(2026, 8, 20),
-                    condition="晴",
-                    risk_level=WeatherRiskLevel.low,
-                )
-            ],
-        ),
-        missing_fields=["次日天气"],
-        sources=[
-            Source(
-                name="天气服务",
-                type=SourceType.weather_api,
-                data_status=DataStatus.realtime,
-                source_updated_at=datetime(2026, 8, 19, 10),
-                retrieved_at=datetime(2026, 8, 19, 10),
-            )
-        ],
-        warnings=["请在出行前再次确认天气"],
-        request_id="request-1",
-        trace_id="trace-1",
+        agent="weather", status=AgentStatus.degraded, summary="天气服务部分不可用", data=WeatherPlanData(**weather_plan_payload()),
+        missing_fields=["次日天气"], warnings=["请在出行前再次确认天气"], request_id="request-1", trace_id="trace-1"
     )
 
     assert result.model_dump()["status"] == AgentStatus.degraded
@@ -607,13 +577,8 @@ def test_agent_result_accepts_degraded_result_without_degraded_field():
 
 def test_agent_result_accepts_failed_result_with_controlled_error():
     result = AgentResult[WeatherPlanData](
-        agent="weather",
-        status=AgentStatus.failed,
-        summary="天气服务不可用",
-        missing_fields=["daily"],
-        error=ErrorDetail(code="WEATHER_UNAVAILABLE", message="天气服务暂不可用", retryable=True),
-        request_id="request-1",
-        trace_id="trace-1",
+        agent="weather", status=AgentStatus.failed, summary="天气服务不可用", missing_fields=["daily"],
+        error=ErrorDetail(code="WEATHER_UNAVAILABLE", message="天气服务暂不可用", retryable=True), request_id="request-1", trace_id="trace-1"
     )
 
     assert result.data is None
