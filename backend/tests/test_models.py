@@ -215,17 +215,65 @@ def test_travel_plan_request_nights_is_read_only():
         request.nights = 3
 
 
-def test_source_accepts_realtime_with_ordered_timestamps():
+@pytest.mark.parametrize(
+    ("source_type", "data_status", "source_updated_at", "knowledge_version"),
+    [
+        (SourceType.weather_api, DataStatus.realtime, datetime(2026, 8, 19, 10), None),
+        (SourceType.map_api, DataStatus.cached, datetime(2026, 8, 19, 10), None),
+        (SourceType.poi_api, DataStatus.degraded, None, None),
+        (SourceType.knowledge_base, DataStatus.knowledge_base, None, "v1"),
+    ],
+)
+def test_source_accepts_each_status_and_type(
+    source_type, data_status, source_updated_at, knowledge_version
+):
+    source = Source(
+        name="数据服务",
+        type=source_type,
+        data_status=data_status,
+        source_updated_at=source_updated_at,
+        retrieved_at=datetime(2026, 8, 19, 10),
+        knowledge_version=knowledge_version,
+        url="https://source.example.com",
+    )
+
+    assert source.data_status is data_status
+    assert source.type is source_type
+
+
+def test_source_does_not_require_timestamp_ordering():
     source = Source(
         name="天气服务",
         type=SourceType.weather_api,
         data_status=DataStatus.realtime,
-        source_updated_at=datetime(2026, 8, 19, 10),
-        retrieved_at=datetime(2026, 8, 19, 10, 1),
-        url="https://weather.example.com",
+        source_updated_at=datetime(2026, 8, 19, 10, 1),
+        retrieved_at=datetime(2026, 8, 19, 10),
     )
 
-    assert source.model_dump()["data_status"] == DataStatus.realtime
+    assert source.source_updated_at == datetime(2026, 8, 19, 10, 1)
+
+
+def test_source_requires_retrieved_at():
+    with pytest.raises(ValidationError):
+        Source(
+            name="天气服务",
+            type=SourceType.weather_api,
+            data_status=DataStatus.realtime,
+            source_updated_at=datetime(2026, 8, 19, 10),
+        )
+
+
+def test_source_rejects_commercial_fields():
+    with pytest.raises(ValidationError):
+        Source(
+            name="天气服务",
+            type=SourceType.weather_api,
+            data_status=DataStatus.realtime,
+            source_updated_at=datetime(2026, 8, 19, 10),
+            retrieved_at=datetime(2026, 8, 19, 10),
+            rating=5,
+            price=100,
+        )
 
 
 @pytest.mark.parametrize("data_status", [DataStatus.realtime, DataStatus.cached])
@@ -314,6 +362,11 @@ def test_domain_fact_models_serialize_successfully():
 def test_poi_rejects_empty_source_ids():
     with pytest.raises(ValidationError):
         PoiCandidate(name="断桥", category="景点", source_ids=[])
+
+
+def test_route_estimate_rejects_non_estimate_value():
+    with pytest.raises(ValidationError):
+        RouteEstimate(distance_meters=1200, duration_minutes=20, is_estimate=False)
 
 
 @pytest.mark.parametrize(

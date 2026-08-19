@@ -60,8 +60,6 @@ class Source(StrictModel):
         if self.data_status in {DataStatus.realtime, DataStatus.cached}:
             if self.source_updated_at is None:
                 raise ValueError("实时或缓存来源必须提供上游更新时间")
-            if self.source_updated_at >= self.retrieved_at:
-                raise ValueError("上游更新时间必须早于获取时间")
         if self.type is SourceType.knowledge_base:
             if self.data_status is not DataStatus.knowledge_base:
                 raise ValueError("知识库来源的数据状态必须为 knowledge_base")
