@@ -236,6 +236,63 @@ class AgentResult(StrictModel, Generic[ResultData]):
         return self
 
 
+class TravelPlanData(StrictModel):
+    """四个专业 Agent 的结构化行程结果。"""
+
+    weather: AgentResult[WeatherPlanData]
+    route: AgentResult[RoutePlanData]
+    lodging: AgentResult[LodgingPlanData]
+    food: AgentResult[FoodPlanData]
+
+
+class TravelPlanDocument(StrictModel):
+    """面向调用方的最终行程文档合同。"""
+
+    request_id: str
+    trace_id: str
+    status: Literal[AgentStatus.success, AgentStatus.degraded, AgentStatus.failed]
+    itinerary: TravelPlanData
+    markdown: Annotated[str, Field(min_length=1)]
+    sources: list[Source] = Field(default_factory=list)
+    warnings: list[NonEmptyText] = Field(default_factory=list)
+    degraded_agents: list[NonEmptyText] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_document_contract(self) -> "TravelPlanDocument":
+        """校验关联标识、降级专业项和整体状态。"""
+
+        results = {
+            "weather": self.itinerary.weather,
+            "route": self.itinerary.route,
+            "lodging": self.itinerary.lodging,
+            "food": self.itinerary.food,
+        }
+        for name, result in results.items():
+            if result.request_id != self.request_id:
+                raise ValueError(f"{name} 的 request_id 必须与文档一致")
+            if result.trace_id != self.trace_id:
+                raise ValueError(f"{name} 的 trace_id 必须与文档一致")
+
+        if len(self.degraded_agents) != len(set(self.degraded_agents)):
+            raise ValueError("degraded_agents 不得包含重复项")
+        degraded_agents = {
+            name for name, result in results.items() if result.status is AgentStatus.degraded
+        }
+        if set(self.degraded_agents) != degraded_agents:
+            raise ValueError("degraded_agents 必须与降级专业项完全一致")
+
+        statuses = {result.status for result in results.values()}
+        if self.status is AgentStatus.success:
+            if AgentStatus.degraded in statuses or AgentStatus.failed in statuses:
+                raise ValueError("success 文档不得包含 degraded 或 failed 专业结果")
+        elif self.status is AgentStatus.degraded:
+            if AgentStatus.degraded not in statuses or AgentStatus.failed in statuses:
+                raise ValueError("degraded 文档必须包含 degraded 且不得包含 failed 专业结果")
+        elif AgentStatus.failed not in statuses:
+            raise ValueError("failed 文档必须包含 failed 专业结果")
+        return self
+
+
 class TravelPlanRequest(StrictModel):
     """旅行规划请求的数据合同。"""
 

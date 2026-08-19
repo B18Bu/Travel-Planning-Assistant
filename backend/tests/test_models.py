@@ -21,6 +21,8 @@ from app.models.travel import (
     RoutePlanData,
     Source,
     SourceType,
+    TravelPlanDocument,
+    TravelPlanData,
     TravelPlanRequest,
     WeatherPlanData,
     WeatherRiskLevel,
@@ -584,3 +586,155 @@ def test_agent_result_accepts_failed_result_with_controlled_error():
     assert result.data is None
     assert result.error is not None
     assert result.error.retryable is True
+
+
+def travel_plan_data(request_id="request-1", trace_id="trace-1", statuses=None):
+    statuses = statuses or {}
+    poi = PoiCandidate(**poi_payload())
+    results = {
+        "weather": AgentResult[WeatherPlanData](
+            agent="天气任意名称",
+            status=statuses.get("weather", AgentStatus.success),
+            summary="天气规划结果",
+            data=WeatherPlanData(**weather_plan_payload()),
+            missing_fields=["次日天气"] if statuses.get("weather") is AgentStatus.degraded else [],
+            request_id=request_id,
+            trace_id=trace_id,
+        ),
+        "route": AgentResult[RoutePlanData](
+            agent="路线任意名称",
+            status=statuses.get("route", AgentStatus.success),
+            summary="路线规划结果",
+            data=RoutePlanData(
+                origin="上海", destination="杭州", daily_areas=[DailyArea(day=1, area="西湖景区")], weather_adjusted=True
+            ),
+            missing_fields=["第二天路线"] if statuses.get("route") is AgentStatus.degraded else [],
+            request_id=request_id,
+            trace_id=trace_id,
+        ),
+        "lodging": AgentResult[LodgingPlanData](
+            agent="住宿任意名称",
+            status=statuses.get("lodging", AgentStatus.success),
+            summary="住宿规划结果",
+            data=LodgingPlanData(nights=2, recommended_area="西湖景区", candidates=[LodgingCandidate(poi=poi)]),
+            missing_fields=["停车信息"] if statuses.get("lodging") is AgentStatus.degraded else [],
+            request_id=request_id,
+            trace_id=trace_id,
+        ),
+        "food": AgentResult[FoodPlanData](
+            agent="餐饮任意名称",
+            status=statuses.get("food", AgentStatus.success),
+            summary="餐饮规划结果",
+            data=FoodPlanData(daily_food=[DailyFoodPlan(day=1, area="西湖景区", candidates=[FoodCandidate(poi=poi)])]),
+            missing_fields=["晚餐信息"] if statuses.get("food") is AgentStatus.degraded else [],
+            request_id=request_id,
+            trace_id=trace_id,
+        ),
+    }
+    return TravelPlanData(**results)
+
+
+def travel_plan_document_payload(status=AgentStatus.degraded, statuses=None):
+    itinerary = travel_plan_data(statuses=statuses)
+    return {
+        "request_id": "request-1",
+        "trace_id": "trace-1",
+        "status": status,
+        "itinerary": itinerary,
+        "markdown": "# 杭州两日游",
+        "degraded_agents": [
+            name for name, result in itinerary.model_dump().items() if result["status"] is AgentStatus.degraded
+        ],
+    }
+
+
+def test_travel_plan_document_constructs_typed_degraded_itinerary():
+    payload = travel_plan_document_payload(statuses={"weather": AgentStatus.degraded})
+
+    document = TravelPlanDocument(**payload)
+
+    assert isinstance(document.itinerary, TravelPlanData)
+    assert document.markdown == "# 杭州两日游"
+    assert document.degraded_agents == ["weather"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("request_id", "another-request"), ("trace_id", "another-trace")],
+)
+def test_travel_plan_document_rejects_mismatched_nested_identifiers(field, value):
+    payload = travel_plan_document_payload(statuses={"weather": AgentStatus.degraded})
+    setattr(payload["itinerary"].weather, field, value)
+
+    with pytest.raises(ValidationError) as exc_info:
+        TravelPlanDocument(**payload)
+
+    assert field in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "degraded_agents",
+    [["weather", "route"], ["weather", "unknown"], ["weather", "weather"]],
+)
+def test_travel_plan_document_requires_exact_unique_degraded_agents(degraded_agents):
+    payload = travel_plan_document_payload(statuses={"weather": AgentStatus.degraded})
+    payload["degraded_agents"] = degraded_agents
+
+    with pytest.raises(ValidationError):
+        TravelPlanDocument(**payload)
+
+
+@pytest.mark.parametrize(
+    ("status", "statuses"),
+    [
+        (AgentStatus.success, {"weather": AgentStatus.degraded}),
+        (AgentStatus.success, {"weather": AgentStatus.failed}),
+        (AgentStatus.degraded, {}),
+        (AgentStatus.degraded, {"weather": AgentStatus.failed}),
+        (AgentStatus.failed, {}),
+    ],
+)
+def test_travel_plan_document_enforces_aggregate_status_contract(status, statuses):
+    if statuses.get("weather") is AgentStatus.failed:
+        itinerary = travel_plan_data()
+        itinerary.weather = AgentResult[WeatherPlanData](
+            agent="天气任意名称",
+            status=AgentStatus.failed,
+            summary="天气服务不可用",
+            missing_fields=["daily"],
+            error=ErrorDetail(code="WEATHER_UNAVAILABLE", message="天气服务暂不可用", retryable=True),
+            request_id="request-1",
+            trace_id="trace-1",
+        )
+        payload = {
+            "request_id": "request-1", "trace_id": "trace-1", "status": status,
+            "itinerary": itinerary, "markdown": "# 杭州两日游", "degraded_agents": [],
+        }
+    else:
+        payload = travel_plan_document_payload(status=status, statuses=statuses)
+
+    with pytest.raises(ValidationError):
+        TravelPlanDocument(**payload)
+
+
+def test_travel_plan_document_rejects_partial_status_empty_markdown_and_sensitive_fields():
+    payload = travel_plan_document_payload(statuses={"weather": AgentStatus.degraded})
+
+    for invalid_payload in [
+        {**payload, "status": AgentStatus.partial},
+        {**payload, "markdown": ""},
+        {**payload, "api_key": "secret"},
+        {**payload, "raw_response": "internal"},
+    ]:
+        with pytest.raises(ValidationError):
+            TravelPlanDocument(**invalid_payload)
+
+
+def test_travel_plan_document_serializes_without_boolean_degraded_field():
+    document = TravelPlanDocument(**travel_plan_document_payload(statuses={"weather": AgentStatus.degraded}))
+
+    serialized = document.model_dump()
+
+    assert "itinerary" in serialized
+    assert "markdown" in serialized
+    assert "degraded" not in serialized
