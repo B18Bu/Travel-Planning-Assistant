@@ -42,7 +42,7 @@ class LodgingAgent:
             filter_suggestions=("请按活动区域、交通便利性和入住日期筛选。",),
         )
         try:
-            area = self._area(daily_areas, request.destination)
+            area = self._area(daily_areas, request.destination, request.days)
             data = LodgingPlanData(
                 nights=request.nights,
                 recommended_area=area,
@@ -86,11 +86,19 @@ class LodgingAgent:
             )
 
     @staticmethod
-    def _area(daily_areas: tuple[Any, ...] | list[Any], destination: str) -> str:
-        if daily_areas:
-            first = daily_areas[0]
-            return first.area if hasattr(first, "area") else first["area"]
-        return destination
+    def _area(
+        daily_areas: tuple[Any, ...] | list[Any], destination: str, max_days: int
+    ) -> str:
+        if not daily_areas:
+            return destination
+        first = daily_areas[0]
+        day = first.day if hasattr(first, "day") else first["day"]
+        area = first.area if hasattr(first, "area") else first["area"]
+        if isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= max_days:
+            raise ValueError("每日区域 day 无效")
+        if not isinstance(area, str) or not area.strip():
+            raise ValueError("每日区域 area 无效")
+        return area
 
     @staticmethod
     def _poi(item: dict[str, Any], source_id: str, expected_category: str) -> PoiCandidate:
@@ -102,13 +110,16 @@ class LodgingAgent:
         if not isinstance(tags, (list, tuple)):
             raise TypeError("POI 标签格式无效")
         category = item.get("category")
-        if not isinstance(category, str) or category.strip() != expected_category:
+        if not isinstance(category, str):
+            raise ValueError("POI 分类不匹配")
+        category = category.strip()
+        if category != expected_category:
             raise ValueError("POI 分类不匹配")
         return PoiCandidate(
             name=item["name"],
             address=item.get("address"),
             location=item.get("location"),
-            category=category,
+            category=expected_category,
             tags=tuple(tags),
             source_ids=(source_id,),
         )

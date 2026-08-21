@@ -128,7 +128,38 @@ def test_summary_failed_takes_precedence_over_partial():
 
     assert document.status is AgentStatus.failed
     assert "food failed" not in document.markdown
-    assert "food_plan" in document.markdown
+    assert "food\\_plan" in document.markdown
+
+
+def test_summary_failed_only_markdown_names_failed_agent_and_reason():
+    values = results()
+    failed = AgentResult(
+        agent="food", status=AgentStatus.failed, summary="food failed",
+        missing_fields=("food_plan",), error={"code": "UPSTREAM", "message": "餐饮服务不可用", "retryable": True},
+        request_id=REQUEST_ID, trace_id=REQUEST_ID,
+    )
+
+    document = SummaryAgent().run(values[0], values[1], values[2], failed, request_id=REQUEST_ID, trace_id=REQUEST_ID)
+
+    assert "food" in document.markdown
+    assert "UPSTREAM" in document.markdown
+    assert "food\\_plan" in document.markdown
+    assert "各专业结果均已完成" not in document.markdown
+
+
+def test_summary_escapes_external_newlines_without_extra_heading():
+    weather = result(
+        "weather", AgentStatus.success,
+        WeatherPlanData(destination="杭州\n## 伪造", daily=(DailyWeather(date=date(2026, 9, 1), condition="晴\n## 伪造", risk_level="low"),)),
+        (source("天气\n## 伪造", SourceType.weather_api),),
+        ("提醒\n## 伪造",),
+    )
+    values = results()
+    document = SummaryAgent().run(weather, values[1], values[2], values[3], request_id=REQUEST_ID, trace_id=REQUEST_ID)
+
+    assert document.markdown.count("## ") == 8
+    assert "杭州 \\#\\# 伪造" in document.markdown
+    assert "## 伪造" not in document.markdown.replace("## 伪造", "", 1)
 
 
 def test_summary_rejects_mismatched_tracking_ids():

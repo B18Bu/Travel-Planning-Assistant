@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import UUID
 
 from app.models.travel import (
@@ -75,7 +76,12 @@ class SummaryAgent:
         return tuple(collected)
 
     @staticmethod
-    def _markdown(itinerary: TravelPlanData, warnings: tuple[str, ...], degraded_agents: tuple[str, ...]) -> str:
+    def _safe(value: object) -> str:
+        text = str(value).replace("\r", " ").replace("\n", " ")
+        return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", text)
+
+    @classmethod
+    def _markdown(cls, itinerary: TravelPlanData, warnings: tuple[str, ...], degraded_agents: tuple[str, ...]) -> str:
         weather_data = itinerary.weather.data
         route_data = itinerary.route.data
         lodging_data = itinerary.lodging.data
@@ -84,28 +90,28 @@ class SummaryAgent:
             "# 旅行计划",
             "",
             "## 行程概览",
-            f"- 目的地：{weather_data.destination if weather_data else '待核验'}",
+            f"- 目的地：{cls._safe(weather_data.destination if weather_data else '待核验')}",
             f"- 行程天数：{len(route_data.daily_areas) if route_data else 0} 天",
             "",
             "## 天气与出游风险",
         ]
         if weather_data and weather_data.daily:
             lines.extend(
-                f"- {item.date.isoformat()}：{item.condition}，风险等级 {item.risk_level.value}。"
+                f"- {item.date.isoformat()}：{cls._safe(item.condition)}，风险等级 {cls._safe(item.risk_level.value)}。"
                 for item in weather_data.daily
             )
         else:
             lines.append("- 暂无逐日天气数据，请出行前核验。")
         lines.extend(["", "## 每日路线"])
         if route_data:
-            lines.extend(f"- 第 {item.day} 天：{item.area}。" for item in route_data.daily_areas)
+            lines.extend(f"- 第 {item.day} 天：{cls._safe(item.area)}。" for item in route_data.daily_areas)
         else:
             lines.append("- 暂无路线数据，请核验活动区域。")
         lines.extend(["", "## 住宿建议"])
         if lodging_data:
-            lines.append(f"- 推荐区域：{lodging_data.recommended_area}。")
+            lines.append(f"- 推荐区域：{cls._safe(lodging_data.recommended_area)}。")
             if lodging_data.candidates:
-                lines.extend(f"- 候选：{candidate.poi.name}（{candidate.poi.address or '地址待核验'}）。" for candidate in lodging_data.candidates)
+                lines.extend(f"- 候选：{cls._safe(candidate.poi.name)}（{cls._safe(candidate.poi.address or '地址待核验')}）。" for candidate in lodging_data.candidates)
             else:
                 lines.append("- 暂无住宿候选，请按区域筛选并核验。")
         else:
@@ -114,12 +120,12 @@ class SummaryAgent:
         if food_data:
             for daily in food_data.daily_food:
                 names = "、".join(candidate.poi.name for candidate in daily.candidates)
-                lines.append(f"- 第 {daily.day} 天 {daily.area}：{names or '暂无候选，请按区域筛选'}。")
+                lines.append(f"- 第 {daily.day} 天 {cls._safe(daily.area)}：{cls._safe(names or '暂无候选，请按区域筛选')}。")
         else:
             lines.append("- 暂无餐饮数据，请核验。")
         lines.extend(["", "## 待核验事项"])
         if warnings:
-            lines.extend(f"- {warning}" for warning in warnings)
+            lines.extend(f"- {cls._safe(warning)}" for warning in warnings)
         else:
             lines.append("- 暂无额外核验事项。")
         missing_fields = tuple(
@@ -128,17 +134,28 @@ class SummaryAgent:
             for field in result.missing_fields
         )
         if missing_fields:
-            lines.extend(f"- 待补字段：{field}。" for field in missing_fields)
+            lines.extend(f"- 待补字段：{cls._safe(field)}。" for field in missing_fields)
         lines.extend(["", "## 来源与更新时间"])
         if itinerary.weather.sources or itinerary.route.sources or itinerary.lodging.sources or itinerary.food.sources:
             for source in SummaryAgent._sources((itinerary.weather, itinerary.route, itinerary.lodging, itinerary.food)):
                 updated = source.source_updated_at.isoformat() if source.source_updated_at else "未提供"
-                lines.append(f"- {source.name}（{source.type.value}）：来源更新时间 {updated}，获取时间 {source.retrieved_at.isoformat()}。")
+                lines.append(f"- {cls._safe(source.name)}（{cls._safe(source.type.value)}）：来源更新时间 {cls._safe(updated)}，获取时间 {cls._safe(source.retrieved_at.isoformat())}。")
         else:
             lines.append("- 暂无来源记录。")
         lines.extend(["", "## 降级说明"])
-        if degraded_agents:
-            lines.append(f"- 以下专业结果已降级：{'、'.join(agent.value if hasattr(agent, 'value') else agent for agent in degraded_agents)}。")
+        failed_results = tuple(
+            result for result in (itinerary.weather, itinerary.route, itinerary.lodging, itinerary.food)
+            if result.status is AgentStatus.failed
+        )
+        if failed_results:
+            for result in failed_results:
+                error_text = ""
+                if result.error is not None:
+                    error_text = f"错误码 {cls._safe(result.error.code)}：{cls._safe(result.error.message)}；"
+                missing = "、".join(cls._safe(field) for field in result.missing_fields) or "无"
+                lines.append(f"- {cls._safe(result.agent.value)} Agent 失败；{error_text}缺失字段：{missing}。")
+        elif degraded_agents:
+            lines.append(f"- 以下专业结果已降级：{cls._safe('、'.join(agent.value if hasattr(agent, 'value') else agent for agent in degraded_agents))}。")
         elif any(result.status is AgentStatus.partial for result in (itinerary.weather, itinerary.route, itinerary.lodging, itinerary.food)):
             lines.append("- 部分专业结果不完整，请根据待核验事项补充确认。")
         else:

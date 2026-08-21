@@ -54,6 +54,64 @@ class FakePoiClient:
 
 
 @pytest.mark.asyncio
+async def test_lodging_rejects_non_exact_hierarchical_category():
+    client = FakePoiClient({("住宿服务", "杭州1日区域"): [poi(category="住宿服务;宾馆;连锁")]})
+
+    result = await LodgingAgent(client).run(request(), areas(), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.degraded
+    assert result.data.candidates == ()
+
+
+@pytest.mark.asyncio
+async def test_lodging_strips_category_before_strict_mapping():
+    client = FakePoiClient({("住宿服务", "杭州1日区域"): [poi(category=" 住宿服务 ")]})
+
+    result = await LodgingAgent(client).run(request(), areas(), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.success
+    assert result.data.candidates[0].poi.category == "住宿服务"
+
+
+@pytest.mark.asyncio
+async def test_food_strips_category_before_strict_mapping():
+    client = FakePoiClient({("餐饮服务", "杭州1日区域"): [poi(name="餐馆", category=" 餐饮服务 ")]})
+
+    result = await FoodAgent(client).run(request(days=1), areas(days=1), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.success
+    assert result.data.daily_food[0].candidates[0].poi.category == "餐饮服务"
+
+
+@pytest.mark.asyncio
+async def test_lodging_rejects_invalid_day_and_area_shapes_in_dict_or_object():
+    class NoArea:
+        day = 1
+
+    for daily_area in ({"day": 0, "area": "西湖"}, {"day": True, "area": "西湖"}, {"day": 1, "area": ""}, NoArea()):
+        result = await LodgingAgent(FakePoiClient()).run(request(), (daily_area,), REQUEST_ID, REQUEST_ID)
+        assert result.status is AgentStatus.degraded
+        assert result.data.candidates == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("daily_area", [
+    {"day": 0, "area": "西湖"},
+    {"day": "1", "area": "西湖"},
+    {"day": True, "area": "西湖"},
+    {"day": 1, "area": ""},
+    type("NoArea", (), {"day": 1})(),
+])
+async def test_food_rejects_invalid_day_and_area_shapes_without_leaking_exceptions(daily_area):
+    result = await FoodAgent(FakePoiClient()).run(request(days=1), (daily_area,), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.degraded
+    assert result.data.daily_food[0].candidates == ()
+    assert "AttributeError" not in result.model_dump_json()
+    assert "KeyError" not in result.model_dump_json()
+
+
+@pytest.mark.asyncio
 async def test_lodging_maps_only_whitelisted_poi_facts_and_limits_ten():
     client = FakePoiClient({("住宿服务", "杭州1日区域"): [poi(name=f"酒店{i}") for i in range(12)]})
     result = await LodgingAgent(client).run(request(), areas(), REQUEST_ID, REQUEST_ID)
@@ -226,7 +284,23 @@ async def test_food_calls_each_area_in_order_and_keeps_empty_days():
 
 
 @pytest.mark.asyncio
+async def test_food_ignores_bad_tail_metadata_and_dedupes_stable_sources():
+    first = poi(name="餐馆1", category="餐饮服务", retrieved_at=datetime(2026, 8, 21, tzinfo=timezone.utc))
+    second = poi(name="餐馆2", category="餐饮服务", retrieved_at=datetime(2026, 8, 22, tzinfo=timezone.utc))
+    tail = poi(name="尾部坏数据", category="餐饮服务", retrieved_at="not-a-date")
+    client = FakePoiClient({("餐饮服务", "杭州1日区域"): [first, second, *([poi(name=f"餐馆{i}", category="餐饮服务") for i in range(3, 11)]), tail]})
+
+    result = await FoodAgent(client).run(request(days=1), areas(days=1), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.success
+    assert len(result.data.daily_food[0].candidates) == 10
+    assert len(result.sources) == 1
+    assert result.sources[0].retrieved_at == datetime(2026, 8, 21, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
 async def test_food_all_empty_degrades_with_all_days_present():
+
     result = await FoodAgent(FakePoiClient()).run(request(days=2), areas(days=2), REQUEST_ID, REQUEST_ID)
 
     assert result.status is AgentStatus.degraded
@@ -244,6 +318,49 @@ async def test_food_short_daily_areas_is_partial_with_missing_area_day():
     assert [item.day for item in result.data.daily_food] == [1]
     assert result.missing_fields == ("food_day_2_area",)
     assert client.calls == [("餐饮服务", "杭州1日区域")]
+
+
+@pytest.mark.asyncio
+async def test_food_sorts_valid_daily_areas_by_day_before_planning():
+    unordered = (DailyArea(day=2, area="杭州2日区域"), DailyArea(day=1, area="杭州1日区域"))
+    client = FakePoiClient({
+        ("餐饮服务", "杭州1日区域"): [poi(name="餐馆1", category="餐饮服务")],
+        ("餐饮服务", "杭州2日区域"): [poi(name="餐馆2", category="餐饮服务")],
+    })
+
+    result = await FoodAgent(client).run(request(days=2), unordered, REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.success
+    assert [item.day for item in result.data.daily_food] == [1, 2]
+    assert client.calls == [("餐饮服务", "杭州1日区域"), ("餐饮服务", "杭州2日区域")]
+
+
+@pytest.mark.asyncio
+async def test_food_duplicate_day_is_partial_without_duplicate_daily_plan():
+    duplicate = (DailyArea(day=1, area="杭州1日区域"), DailyArea(day=1, area="重复区域"), DailyArea(day=2, area="杭州2日区域"))
+    client = FakePoiClient({
+        ("餐饮服务", "杭州1日区域"): [poi(name="餐馆1", category="餐饮服务")],
+        ("餐饮服务", "杭州2日区域"): [poi(name="餐馆2", category="餐饮服务")],
+    })
+
+    result = await FoodAgent(client).run(request(days=2), duplicate, REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.partial
+    assert [item.day for item in result.data.daily_food] == [1, 2]
+    assert len({item.day for item in result.data.daily_food}) == len(result.data.daily_food)
+    assert "food_day_1_duplicate" in result.missing_fields
+
+
+@pytest.mark.asyncio
+async def test_food_out_of_range_day_is_degraded_without_invalid_daily_plan():
+    result = await FoodAgent(FakePoiClient(),).run(
+        request(days=2), (DailyArea(day=3, area="超范围"),), REQUEST_ID, REQUEST_ID
+    )
+
+    assert result.status is AgentStatus.degraded
+    assert result.data.daily_food
+    assert all(1 <= item.day <= 2 for item in result.data.daily_food)
+    assert "food_day_3_out_of_range" in result.missing_fields
 
 
 @pytest.mark.asyncio
