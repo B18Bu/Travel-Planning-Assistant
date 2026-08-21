@@ -18,6 +18,12 @@ def _frontend_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "frontend"
 
 
+def _image_dir() -> Path:
+    """返回旅行轮播图片目录。"""
+
+    return Path(__file__).resolve().parents[2] / "image"
+
+
 def create_app(orchestrator=None, settings: Settings | None = None) -> FastAPI:
     """创建 v1 后端应用。"""
 
@@ -47,6 +53,9 @@ def create_app(orchestrator=None, settings: Settings | None = None) -> FastAPI:
         return {"status": "ready"}
 
     app.include_router(travel_router)
+    image_dir = _image_dir()
+    if image_dir.is_dir():
+        app.mount("/image", StaticFiles(directory=image_dir), name="images")
     frontend_dir = _frontend_dir()
     if frontend_dir.is_dir():
         app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")

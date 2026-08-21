@@ -386,6 +386,24 @@
   function setupTravelShowcase() {
     const slides = [...document.querySelectorAll(".travel-slide")];
     const dots = [...document.querySelectorAll(".travel-dot")];
+    const imageExtensions = ["webp", "jpg", "png"];
+    slides.forEach((slide) => {
+      const base = slide.dataset.imageBase;
+      if (!base) return;
+      let extensionIndex = 0;
+      const tryNextImage = () => {
+        if (extensionIndex >= imageExtensions.length) return;
+        const extension = imageExtensions[extensionIndex++];
+        const image = new Image();
+        image.onload = () => {
+          slide.style.backgroundImage = `url(\"/image/${base}.${extension}\")`;
+          slide.classList.add("has-image");
+        };
+        image.onerror = tryNextImage;
+        image.src = `/image/${base}.${extension}`;
+      };
+      tryNextImage();
+    });
     if (!slides.length || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let current = 0;
     window.setInterval(() => {
