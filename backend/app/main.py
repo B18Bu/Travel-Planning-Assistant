@@ -1,15 +1,23 @@
+from __future__ import annotations
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_settings
+from app.api.travel import router as travel_router
+from app.config import Settings, get_settings
+from app.dependencies import build_orchestrator
 from app.security import SecurityHeadersMiddleware
 
 
-def create_app() -> FastAPI:
+def create_app(orchestrator=None, settings: Settings | None = None) -> FastAPI:
     """创建 v1 后端应用。"""
 
-    settings = get_settings()
+    settings = settings if settings is not None else get_settings()
     app = FastAPI(title="智能文旅策划助手", version="1.0.0")
+    app.state.settings = settings
+    app.state.orchestrator = (
+        orchestrator if orchestrator is not None else build_orchestrator(settings)
+    )
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -29,6 +37,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail="外部数据服务尚未配置")
         return {"status": "ready"}
 
+    app.include_router(travel_router)
     return app
 
 
