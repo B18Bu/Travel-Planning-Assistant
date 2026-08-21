@@ -473,6 +473,19 @@ def test_weather_success_result_requires_at_least_one_daily_forecast():
         )
 
 
+def test_non_weather_generic_success_result_does_not_use_weather_daily_rule():
+    result = AgentResult[dict](
+        agent="route",
+        status=AgentStatus.success,
+        summary="通用结果",
+        data={},
+        request_id="550e8400-e29b-41d4-a716-446655440000",
+        trace_id="550e8400-e29b-41d4-a716-446655440000",
+    )
+
+    assert result.data == {}
+
+
 @pytest.mark.parametrize(
     ("model", "payload"),
     [

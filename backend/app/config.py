@@ -16,33 +16,33 @@ class Settings(BaseSettings):
 
     # 和风天气逐日预报 API 的服务端密钥，默认空值；仅在后端使用，不得暴露。
     heweather_api_key: str = ""
-    # 和风天气固定 HTTPS API 域名，默认值仅供后端使用，不接受客户端覆盖。
+    # 和风天气固定 HTTPS API 域名，默认值：https://devapi.qweather.com；仅由后端控制，不接受客户端覆盖。
     heweather_base_url: str = "https://devapi.qweather.com"
     # 高德地理编码、驾车路线和 POI 文本搜索 API 的服务端密钥，默认空值；仅在后端使用，不得暴露。
     amap_api_key: str = ""
-    # 高德地图固定 HTTPS API 域名，默认值仅供后端使用，不接受客户端覆盖。
+    # 高德地图固定 HTTPS API 域名，默认值：https://restapi.amap.com；仅由后端控制，不接受客户端覆盖。
     amap_base_url: str = "https://restapi.amap.com"
 
-    # 所有外部 API HTTP 连接建立超时，默认 3.0 秒；仅由后端控制，不接受客户端覆盖。
+    # 所有外部 API HTTP 连接建立超时，单位为秒，默认值：3.0；仅由后端控制，不接受客户端覆盖。
     external_connect_timeout_seconds: float = 3.0
-    # 所有外部 API HTTP 响应读取超时，默认 8.0 秒；单位为秒，仅由后端控制，不接受客户端覆盖。
+    # 所有外部 API HTTP 响应读取超时，单位为秒，默认值：8.0；仅由后端控制，不接受客户端覆盖。
     external_read_timeout_seconds: float = 8.0
-    # 所有外部 API 单次请求总超时，默认 10.0 秒；单位为秒，仅由后端控制，不接受客户端覆盖。
+    # 所有外部 API 单次请求总超时，单位为秒，默认值：10.0；仅由后端控制，不接受客户端覆盖。
     external_total_timeout_seconds: float = 10.0
-    # 和风天气及高德 API 的最大请求尝试次数，默认 3 次；仅重试受控瞬时错误，仅由后端控制，不接受客户端覆盖。
+    # 和风天气及高德 API 的最大请求尝试次数，单位为次，默认值：3；仅重试受控瞬时错误；仅由后端控制，不接受客户端覆盖。
     external_max_attempts: int = 3
-    # 和风天气或高德 API 连续失败的熔断阈值，默认 3 次；仅由后端控制，不接受客户端覆盖。
+    # 和风天气或高德 API 连续失败的熔断阈值，单位为次，默认值：3；仅由后端控制，不接受客户端覆盖。
     circuit_breaker_failure_threshold: int = 3
-    # 和风天气或高德 API 熔断保持时长，默认 60 秒；单位为秒，仅由后端控制，不接受客户端覆盖。
+    # 和风天气或高德 API 熔断保持时长，单位为秒，默认值：60；仅由后端控制，不接受客户端覆盖。
     circuit_breaker_open_seconds: int = 60
 
-    # 和风天气逐日预报结果的进程内缓存 TTL，默认 1800 秒；单位为秒，仅由后端控制，不接受客户端覆盖。
+    # 和风天气逐日预报结果的进程内缓存 TTL，单位为秒，默认值：1800；仅由后端控制，不接受客户端覆盖。
     weather_cache_ttl_seconds: int = 1800
-    # 高德地理编码结果的进程内缓存 TTL，默认 604800 秒；单位为秒，仅由后端控制，不接受客户端覆盖。
+    # 高德地理编码结果的进程内缓存 TTL，单位为秒，默认值：604800；仅由后端控制，不接受客户端覆盖。
     amap_geocode_cache_ttl_seconds: int = 604800
-    # 高德驾车路线结果的进程内缓存 TTL，默认 900 秒；单位为秒，仅由后端控制，不接受客户端覆盖。
+    # 高德驾车路线结果的进程内缓存 TTL，单位为秒，默认值：900；仅由后端控制，不接受客户端覆盖。
     amap_route_cache_ttl_seconds: int = 900
-    # 高德 POI 搜索结果的进程内缓存 TTL，默认 3600 秒；单位为秒，仅由后端控制，不接受客户端覆盖。
+    # 高德 POI 搜索结果的进程内缓存 TTL，单位为秒，默认值：3600；仅由后端控制，不接受客户端覆盖。
     amap_poi_cache_ttl_seconds: int = 3600
 
 

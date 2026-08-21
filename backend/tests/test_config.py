@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from app.config import Settings
 
 
@@ -58,5 +60,64 @@ def test_env_example_documents_each_external_setting_and_never_contains_secret()
 
     assert "单位：秒" in text
     assert "不得提交真实值或暴露到前端" in text
-    assert "仅用于后端请求，不允许客户端覆盖" in text
+    assert "仅后端控制，客户端不可覆盖" in text
     assert "仅用于受控瞬时错误" in text
+
+
+def _comment_before_field(text: str, field: str) -> str:
+    lines = text.splitlines()
+    index = next(index for index, line in enumerate(lines) if field in line)
+    comments = []
+    index -= 1
+    while index >= 0 and lines[index].lstrip().startswith("#"):
+        comments.append(lines[index])
+        index -= 1
+    return "\n".join(reversed(comments))
+
+
+CONFIG_FIELD_DOCUMENTATION = {
+    "heweather_base_url": ["https://devapi.qweather.com", "和风天气", "仅由后端控制，不接受客户端覆盖"],
+    "amap_base_url": ["https://restapi.amap.com", "高德", "仅由后端控制，不接受客户端覆盖"],
+    "external_connect_timeout_seconds": ["单位为秒，默认值：3.0", "所有外部 API", "仅由后端控制，不接受客户端覆盖"],
+    "external_read_timeout_seconds": ["单位为秒，默认值：8.0", "所有外部 API", "仅由后端控制，不接受客户端覆盖"],
+    "external_total_timeout_seconds": ["单位为秒，默认值：10.0", "所有外部 API", "仅由后端控制，不接受客户端覆盖"],
+    "external_max_attempts": ["单位为次，默认值：3", "和风天气及高德 API", "仅由后端控制，不接受客户端覆盖"],
+    "circuit_breaker_failure_threshold": ["单位为次，默认值：3", "和风天气或高德 API", "仅由后端控制，不接受客户端覆盖"],
+    "circuit_breaker_open_seconds": ["单位为秒，默认值：60", "和风天气或高德 API", "仅由后端控制，不接受客户端覆盖"],
+    "weather_cache_ttl_seconds": ["单位为秒，默认值：1800", "和风天气逐日预报", "仅由后端控制，不接受客户端覆盖"],
+    "amap_geocode_cache_ttl_seconds": ["单位为秒，默认值：604800", "高德地理编码", "仅由后端控制，不接受客户端覆盖"],
+    "amap_route_cache_ttl_seconds": ["单位为秒，默认值：900", "高德驾车路线", "仅由后端控制，不接受客户端覆盖"],
+    "amap_poi_cache_ttl_seconds": ["单位为秒，默认值：3600", "高德 POI", "仅由后端控制，不接受客户端覆盖"],
+}
+
+
+ENV_FIELD_DOCUMENTATION = {
+    "HEWEATHER_BASE_URL": ["https://devapi.qweather.com", "和风天气", "仅后端控制，客户端不可覆盖"],
+    "AMAP_BASE_URL": ["https://restapi.amap.com", "高德", "仅后端控制，客户端不可覆盖"],
+    "EXTERNAL_CONNECT_TIMEOUT_SECONDS": ["单位：秒，默认值：3.0", "所有外部 API", "仅后端控制，客户端不可覆盖"],
+    "EXTERNAL_READ_TIMEOUT_SECONDS": ["单位：秒，默认值：8.0", "所有外部 API", "仅后端控制，客户端不可覆盖"],
+    "EXTERNAL_TOTAL_TIMEOUT_SECONDS": ["单位：秒，默认值：10.0", "所有外部 API", "仅后端控制，客户端不可覆盖"],
+    "EXTERNAL_MAX_ATTEMPTS": ["单位：次，默认值：3", "和风天气及高德 API", "仅后端控制，客户端不可覆盖"],
+    "CIRCUIT_BREAKER_FAILURE_THRESHOLD": ["单位：次，默认值：3", "和风天气或高德 API", "仅后端控制，客户端不可覆盖"],
+    "CIRCUIT_BREAKER_OPEN_SECONDS": ["单位：秒，默认值：60", "和风天气或高德 API", "仅后端控制，客户端不可覆盖"],
+    "WEATHER_CACHE_TTL_SECONDS": ["单位：秒，默认值：1800", "和风天气逐日预报", "仅后端控制，客户端不可覆盖"],
+    "AMAP_GEOCODE_CACHE_TTL_SECONDS": ["单位：秒，默认值：604800", "高德地理编码", "仅后端控制，客户端不可覆盖"],
+    "AMAP_ROUTE_CACHE_TTL_SECONDS": ["单位：秒，默认值：900", "高德驾车路线", "仅后端控制，客户端不可覆盖"],
+    "AMAP_POI_CACHE_TTL_SECONDS": ["单位：秒，默认值：3600", "高德 POI", "仅后端控制，客户端不可覆盖"],
+}
+
+
+@pytest.mark.parametrize("field, required_fragments", CONFIG_FIELD_DOCUMENTATION.items())
+def test_each_runtime_config_field_has_adjacent_documentation(field, required_fragments):
+    comment = _comment_before_field(CONFIG_SOURCE.read_text(encoding="utf-8"), field)
+
+    for fragment in required_fragments:
+        assert fragment in comment, f"{field} 缺少相邻说明：{fragment}"
+
+
+@pytest.mark.parametrize("field, required_fragments", ENV_FIELD_DOCUMENTATION.items())
+def test_each_env_config_field_has_adjacent_documentation(field, required_fragments):
+    comment = _comment_before_field(ENV_EXAMPLE.read_text(encoding="utf-8"), field)
+
+    for fragment in required_fragments:
+        assert fragment in comment, f"{field} 缺少相邻说明：{fragment}"
