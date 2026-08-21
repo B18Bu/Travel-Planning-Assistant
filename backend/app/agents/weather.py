@@ -26,8 +26,6 @@ class WeatherAgent:
     """使用高德地点与和风逐日预报生成天气结果。"""
 
     def __init__(self, weather_client: Any, amap_client: Any) -> None:
-        if hasattr(weather_client, "geocode") and hasattr(amap_client, "daily_forecast"):
-            weather_client, amap_client = amap_client, weather_client
         self.weather_client = weather_client
         self.amap_client = amap_client
 
@@ -43,7 +41,11 @@ class WeatherAgent:
             forecast = await self.weather_client.daily_forecast(
                 location_id, request.departure_date, request.days
             )
-            raw_daily = forecast.get("daily", ())
+            if not isinstance(forecast, dict) or "daily" not in forecast:
+                raise ValueError("天气预报结构无效")
+            raw_daily = forecast["daily"]
+            if not isinstance(raw_daily, (list, tuple)):
+                raise ValueError("天气逐日预报结构无效")
             daily = tuple(self._daily_item(item) for item in raw_daily)
             sources.append(self._source(forecast, "和风天气", SourceType.weather_api))
             data = WeatherPlanData(

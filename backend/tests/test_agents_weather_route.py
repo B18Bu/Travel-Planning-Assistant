@@ -48,6 +48,12 @@ class FakeAmapClient:
         return self.route
 
 
+class DualCapabilityClient(FakeWeatherClient, FakeAmapClient):
+    def __init__(self, result, geocodes):
+        FakeWeatherClient.__init__(self, result)
+        FakeAmapClient.__init__(self, geocodes=geocodes)
+
+
 def request(days=3):
     from app.models.travel import TravelPlanRequest
 
@@ -216,6 +222,53 @@ def test_route_agent_fallback_has_no_estimate_and_keeps_daily_areas():
 def test_agent_results_do_not_expose_transactional_fields():
     assert not {"price", "inventory", "rating", "queue"} & set(WeatherPlanData.model_fields)
     assert not {"price", "inventory", "rating", "queue"} & set(RoutePlanData.model_fields)
+
+
+def test_weather_constructor_does_not_swap_dual_capability_clients():
+    first = DualCapabilityClient(
+        weather_payload(days=1),
+        {"杭州": {"name": "杭州", "location": "120,30", "adcode": "330100", **source_metadata(SourceType.map_api)}},
+    )
+    second = DualCapabilityClient(
+        weather_payload(days=1),
+        {"杭州": {"name": "杭州", "location": "120,30", "adcode": "330100", **source_metadata(SourceType.map_api)}},
+    )
+
+    agent = WeatherAgent(first, second)
+
+    assert agent.weather_client is first
+    assert agent.amap_client is second
+
+
+@pytest.mark.parametrize("forecast", [None, []])
+def test_weather_non_dict_forecast_is_controlled_degraded(forecast):
+    agent = WeatherAgent(
+        weather_client=FakeWeatherClient(forecast),
+        amap_client=FakeAmapClient(
+            geocodes={"杭州": {"name": "杭州", "location": "120,30", "adcode": "330100", **source_metadata(SourceType.map_api)}}
+        ),
+    )
+
+    result = __import__("asyncio").run(agent.run(request(), **ids()))
+
+    assert result.status is AgentStatus.degraded
+    assert result.data.daily == ()
+    assert result.missing_fields == ("daily_forecast",)
+
+
+def test_weather_forecast_without_daily_is_controlled_degraded():
+    agent = WeatherAgent(
+        weather_client=FakeWeatherClient(source_metadata(SourceType.weather_api)),
+        amap_client=FakeAmapClient(
+            geocodes={"杭州": {"name": "杭州", "location": "120,30", "adcode": "330100", **source_metadata(SourceType.map_api)}}
+        ),
+    )
+
+    result = __import__("asyncio").run(agent.run(request(), **ids()))
+
+    assert result.status is AgentStatus.degraded
+    assert result.data.daily == ()
+    assert result.missing_fields == ("daily_forecast",)
 
 
 def test_agents_accept_named_client_constructor_arguments():
