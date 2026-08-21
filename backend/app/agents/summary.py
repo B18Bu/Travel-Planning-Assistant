@@ -1,0 +1,150 @@
+from __future__ import annotations
+
+from uuid import UUID
+
+from app.models.travel import (
+    AgentResult,
+    AgentStatus,
+    TravelPlanData,
+    TravelPlanDocument,
+)
+
+
+class SummaryAgent:
+    """将四个专业结果聚合为合同校验过的确定性行程文档。"""
+
+    def run(
+        self,
+        weather: AgentResult,
+        route: AgentResult,
+        lodging: AgentResult,
+        food: AgentResult,
+        request_id: str,
+        trace_id: str,
+    ) -> TravelPlanDocument:
+        self._validate_ids(request_id, trace_id)
+        itinerary = TravelPlanData(
+            weather=weather,
+            route=route,
+            lodging=lodging,
+            food=food,
+        )
+        results = (weather, route, lodging, food)
+        sources = self._sources(results)
+        warnings = tuple(warning for result in results for warning in result.warnings)
+        degraded_agents = tuple(
+            result.agent for result in results if result.status is AgentStatus.degraded
+        )
+        if any(result.status is AgentStatus.failed for result in results):
+            status = AgentStatus.failed
+        elif any(
+            result.status in {AgentStatus.degraded, AgentStatus.partial}
+            for result in results
+        ):
+            status = AgentStatus.degraded
+        else:
+            status = AgentStatus.success
+        return TravelPlanDocument(
+            request_id=request_id,
+            trace_id=trace_id,
+            status=status,
+            itinerary=itinerary,
+            markdown=self._markdown(itinerary, warnings, degraded_agents),
+            sources=sources,
+            warnings=warnings,
+            degraded_agents=degraded_agents,
+        )
+
+    @staticmethod
+    def _sources(results: tuple[AgentResult, ...]) -> tuple:
+        collected = []
+        seen: set[tuple[object, ...]] = set()
+        for result in results:
+            for source in result.sources:
+                key = (
+                    source.name,
+                    source.type,
+                    source.data_status,
+                    source.source_updated_at,
+                    str(source.url) if source.url is not None else None,
+                    source.knowledge_version,
+                )
+                if key not in seen:
+                    seen.add(key)
+                    collected.append(source)
+        return tuple(collected)
+
+    @staticmethod
+    def _markdown(itinerary: TravelPlanData, warnings: tuple[str, ...], degraded_agents: tuple[str, ...]) -> str:
+        weather_data = itinerary.weather.data
+        route_data = itinerary.route.data
+        lodging_data = itinerary.lodging.data
+        food_data = itinerary.food.data
+        lines = [
+            "# 旅行计划",
+            "",
+            "## 行程概览",
+            f"- 目的地：{weather_data.destination if weather_data else '待核验'}",
+            f"- 行程天数：{len(route_data.daily_areas) if route_data else 0} 天",
+            "",
+            "## 天气与出游风险",
+        ]
+        if weather_data and weather_data.daily:
+            lines.extend(
+                f"- {item.date.isoformat()}：{item.condition}，风险等级 {item.risk_level.value}。"
+                for item in weather_data.daily
+            )
+        else:
+            lines.append("- 暂无逐日天气数据，请出行前核验。")
+        lines.extend(["", "## 每日路线"])
+        if route_data:
+            lines.extend(f"- 第 {item.day} 天：{item.area}。" for item in route_data.daily_areas)
+        else:
+            lines.append("- 暂无路线数据，请核验活动区域。")
+        lines.extend(["", "## 住宿建议"])
+        if lodging_data:
+            lines.append(f"- 推荐区域：{lodging_data.recommended_area}。")
+            if lodging_data.candidates:
+                lines.extend(f"- 候选：{candidate.poi.name}（{candidate.poi.address or '地址待核验'}）。" for candidate in lodging_data.candidates)
+            else:
+                lines.append("- 暂无住宿候选，请按区域筛选并核验。")
+        else:
+            lines.append("- 暂无住宿数据，请核验。")
+        lines.extend(["", "## 餐饮建议"])
+        if food_data:
+            for daily in food_data.daily_food:
+                names = "、".join(candidate.poi.name for candidate in daily.candidates)
+                lines.append(f"- 第 {daily.day} 天 {daily.area}：{names or '暂无候选，请按区域筛选'}。")
+        else:
+            lines.append("- 暂无餐饮数据，请核验。")
+        lines.extend(["", "## 待核验事项"])
+        lines.extend(f"- {warning}" for warning in warnings) or lines.append("- 暂无额外核验事项。")
+        lines.extend(["", "## 来源与更新时间"])
+        if itinerary.weather.sources or itinerary.route.sources or itinerary.lodging.sources or itinerary.food.sources:
+            for source in SummaryAgent._sources((itinerary.weather, itinerary.route, itinerary.lodging, itinerary.food)):
+                updated = source.source_updated_at.isoformat() if source.source_updated_at else "未提供"
+                lines.append(f"- {source.name}（{source.type.value}）：来源更新时间 {updated}，获取时间 {source.retrieved_at.isoformat()}。")
+        else:
+            lines.append("- 暂无来源记录。")
+        lines.extend(["", "## 降级说明"])
+        if degraded_agents:
+            lines.append(f"- 以下专业结果已降级：{'、'.join(agent.value if hasattr(agent, 'value') else agent for agent in degraded_agents)}。")
+        elif any(result.status is AgentStatus.partial for result in (itinerary.weather, itinerary.route, itinerary.lodging, itinerary.food)):
+            lines.append("- 部分专业结果不完整，请根据待核验事项补充确认。")
+        else:
+            lines.append("- 各专业结果均已完成。")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _validate_ids(request_id: str, trace_id: str) -> None:
+        try:
+            request_uuid = UUID(request_id)
+            trace_uuid = UUID(trace_id)
+            if (
+                request_uuid.version not in {1, 2, 3, 4, 5}
+                or trace_uuid.version not in {1, 2, 3, 4, 5}
+                or request_uuid != trace_uuid
+            ):
+                raise ValueError
+        except (TypeError, ValueError, AttributeError):
+            raise ValueError("请求追踪标识无效") from None
