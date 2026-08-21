@@ -23,8 +23,8 @@ REQUEST_ID = str(uuid4())
 STAMP = datetime(2026, 8, 21, tzinfo=timezone.utc)
 
 
-def source(name, source_type, status="realtime"):
-    return Source(name=name, type=source_type, data_status=status, retrieved_at=STAMP)
+def source(name, source_type, status="realtime", retrieved_at=STAMP, updated=None):
+    return Source(name=name, type=source_type, data_status=status, retrieved_at=retrieved_at, source_updated_at=updated)
 
 
 def result(agent, status, data, sources=(), warnings=(), missing_fields=()):
@@ -93,6 +93,42 @@ def test_summary_markdown_has_fixed_sections_and_no_transactional_or_raw_fields(
         assert f"## {heading}" in document.markdown
     for forbidden in ("price", "inventory", "rating", "queue", "password", "{'", "AgentResult("):
         assert forbidden not in document.markdown
+
+
+def test_summary_markdown_renders_warning_without_empty_notice():
+    document = SummaryAgent().run(*results(), request_id=REQUEST_ID, trace_id=REQUEST_ID)
+
+    assert "- 天气提醒" in document.markdown
+    assert "暂无额外核验事项" not in document.markdown
+    assert "来源更新时间" in document.markdown
+    assert "## 降级说明" in document.markdown
+
+
+def test_summary_dedupes_sources_ignoring_retrieved_at_and_keeps_first_source():
+    first = source("天气", SourceType.weather_api, retrieved_at=STAMP)
+    second = source("天气", SourceType.weather_api, retrieved_at=datetime(2026, 8, 22, tzinfo=timezone.utc))
+    values = results()
+    weather = result("weather", AgentStatus.success, values[0].data, (first, second), ("天气提醒",))
+
+    document = SummaryAgent().run(weather, values[1], values[2], values[3], request_id=REQUEST_ID, trace_id=REQUEST_ID)
+
+    assert len([item for item in document.sources if item.name == "天气"]) == 1
+    assert document.sources[0].retrieved_at == STAMP
+
+
+def test_summary_failed_takes_precedence_over_partial():
+    values = results((AgentStatus.success, AgentStatus.success, AgentStatus.partial, AgentStatus.success))
+    failed = AgentResult(
+        agent="food", status=AgentStatus.failed, summary="food failed",
+        missing_fields=("food_plan",), error={"code": "UPSTREAM", "message": "unavailable", "retryable": True},
+        request_id=REQUEST_ID, trace_id=REQUEST_ID,
+    )
+
+    document = SummaryAgent().run(values[0], values[1], values[2], failed, request_id=REQUEST_ID, trace_id=REQUEST_ID)
+
+    assert document.status is AgentStatus.failed
+    assert "food failed" not in document.markdown
+    assert "food_plan" in document.markdown
 
 
 def test_summary_rejects_mismatched_tracking_ids():

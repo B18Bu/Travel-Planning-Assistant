@@ -34,22 +34,29 @@ class LodgingAgent:
         trace_id: str,
     ) -> AgentResult[LodgingPlanData]:
         self._validate_ids(request_id, trace_id)
-        area = self._area(daily_areas, request.destination)
         sources: list[Source] = []
+        area = request.destination
         data = LodgingPlanData(
             nights=request.nights,
             recommended_area=area,
             filter_suggestions=("请按活动区域、交通便利性和入住日期筛选。",),
         )
         try:
+            area = self._area(daily_areas, request.destination)
+            data = LodgingPlanData(
+                nights=request.nights,
+                recommended_area=area,
+                filter_suggestions=("请按活动区域、交通便利性和入住日期筛选。",),
+            )
             raw_pois = await self.amap_client.search_poi("住宿服务", area)
             if not isinstance(raw_pois, list):
                 raise ValueError("POI 响应格式无效")
+            limited_pois = raw_pois[:10]
             candidates = tuple(
-                LodgingCandidate(poi=self._poi(item, "amap:lodging"))
-                for item in raw_pois[:10]
+                LodgingCandidate(poi=self._poi(item, "amap:lodging", "住宿服务"))
+                for item in limited_pois
             )
-            sources = self._sources(raw_pois)
+            sources = self._sources(limited_pois)
             data = LodgingPlanData(
                 nights=request.nights,
                 recommended_area=area,
@@ -86,7 +93,7 @@ class LodgingAgent:
         return destination
 
     @staticmethod
-    def _poi(item: dict[str, Any], source_id: str) -> PoiCandidate:
+    def _poi(item: dict[str, Any], source_id: str, expected_category: str) -> PoiCandidate:
         if not isinstance(item, dict):
             raise TypeError("POI 项格式无效")
         tags = item.get("tags", ())
@@ -94,11 +101,14 @@ class LodgingAgent:
             tags = ()
         if not isinstance(tags, (list, tuple)):
             raise TypeError("POI 标签格式无效")
+        category = item.get("category")
+        if not isinstance(category, str) or category.strip() != expected_category:
+            raise ValueError("POI 分类不匹配")
         return PoiCandidate(
             name=item["name"],
             address=item.get("address"),
             location=item.get("location"),
-            category=item["category"],
+            category=category,
             tags=tuple(tags),
             source_ids=(source_id,),
         )
@@ -114,7 +124,25 @@ class LodgingAgent:
                 source_updated_at=item.get("source_updated_at"),
                 retrieved_at=item["retrieved_at"],
             )
-            if source not in sources:
+            key = (
+                source.name,
+                source.type,
+                source.data_status,
+                source.source_updated_at,
+                str(source.url) if source.url is not None else None,
+                source.knowledge_version,
+            )
+            if not any(
+                (
+                    item.name,
+                    item.type,
+                    item.data_status,
+                    item.source_updated_at,
+                    str(item.url) if item.url is not None else None,
+                    item.knowledge_version,
+                ) == key
+                for item in sources
+            ):
                 sources.append(source)
         return sources
 

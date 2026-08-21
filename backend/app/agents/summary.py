@@ -118,7 +118,17 @@ class SummaryAgent:
         else:
             lines.append("- 暂无餐饮数据，请核验。")
         lines.extend(["", "## 待核验事项"])
-        lines.extend(f"- {warning}" for warning in warnings) or lines.append("- 暂无额外核验事项。")
+        if warnings:
+            lines.extend(f"- {warning}" for warning in warnings)
+        else:
+            lines.append("- 暂无额外核验事项。")
+        missing_fields = tuple(
+            field
+            for result in (itinerary.weather, itinerary.route, itinerary.lodging, itinerary.food)
+            for field in result.missing_fields
+        )
+        if missing_fields:
+            lines.extend(f"- 待补字段：{field}。" for field in missing_fields)
         lines.extend(["", "## 来源与更新时间"])
         if itinerary.weather.sources or itinerary.route.sources or itinerary.lodging.sources or itinerary.food.sources:
             for source in SummaryAgent._sources((itinerary.weather, itinerary.route, itinerary.lodging, itinerary.food)):

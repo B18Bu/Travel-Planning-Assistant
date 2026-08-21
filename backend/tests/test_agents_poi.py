@@ -72,10 +72,58 @@ async def test_lodging_maps_only_whitelisted_poi_facts_and_limits_ten():
     assert result.sources[0].type is SourceType.poi_api
     assert result.sources[0].data_status is DataStatus.realtime
     assert result.sources[0].retrieved_at is not None
+    assert len(result.sources) == 1
+
+
+@pytest.mark.asyncio
+async def test_lodging_ignores_bad_source_metadata_after_first_ten_pois():
+    pois = [poi(name=f"酒店{i}") for i in range(10)] + [poi(name="尾部坏数据", retrieved_at="not-a-date")]
+    result = await LodgingAgent(FakePoiClient({("住宿服务", "杭州1日区域"): pois})).run(
+        request(), areas(), REQUEST_ID, REQUEST_ID
+    )
+
+    assert result.status is AgentStatus.success
+    assert len(result.data.candidates) == 10
+    assert len(result.sources) == 1
+
+
+@pytest.mark.asyncio
+async def test_lodging_malformed_area_degrades_without_keyerror():
+    result = await LodgingAgent(FakePoiClient()).run(
+        request(), ({"day": 1},), REQUEST_ID, REQUEST_ID
+    )
+
+    assert result.status is AgentStatus.degraded
+    assert result.data.candidates == ()
+    assert result.missing_fields == ("lodging_candidates",)
+
+
+@pytest.mark.asyncio
+async def test_lodging_sources_dedupe_by_stable_metadata_and_keep_first_source():
+    first = poi(retrieved_at=datetime(2026, 8, 21, tzinfo=timezone.utc))
+    second = poi(name="另一家酒店", retrieved_at=datetime(2026, 8, 22, tzinfo=timezone.utc))
+    client = FakePoiClient({("住宿服务", "杭州1日区域"): [first, second]})
+
+    result = await LodgingAgent(client).run(request(), areas(), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.success
+    assert len(result.sources) == 1
+    assert result.sources[0].retrieved_at == datetime(2026, 8, 21, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_lodging_empty_areas_uses_destination_fallback_area():
+    client = FakePoiClient()
+    result = await LodgingAgent(client).run(request(), (), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.degraded
+    assert result.data.recommended_area == "杭州"
+    assert client.calls == [("住宿服务", "杭州")]
 
 
 @pytest.mark.asyncio
 async def test_lodging_empty_poi_degrades_without_fabricating_businesses():
+
     result = await LodgingAgent(FakePoiClient()).run(request(), areas(), REQUEST_ID, REQUEST_ID)
 
     assert result.status is AgentStatus.degraded
@@ -97,6 +145,65 @@ async def test_lodging_external_or_malformed_payload_is_controlled_degradation()
 
     malformed = FakePoiClient({("住宿服务", "杭州1日区域"): [{"name": "坏数据"}]})
     result = await LodgingAgent(malformed).run(request(), areas(), REQUEST_ID, REQUEST_ID)
+    assert result.status is AgentStatus.degraded
+    assert result.data.candidates == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("category", ["餐饮服务", "其他", ""])
+async def test_lodging_rejects_non_lodging_category(category):
+    client = FakePoiClient({("住宿服务", "杭州1日区域"): [poi(category=category)]})
+
+    result = await LodgingAgent(client).run(request(), areas(), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.degraded
+    assert result.data.candidates == ()
+    assert result.missing_fields == ("lodging_candidates",)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("category", ["住宿服务", "其他", ""])
+async def test_food_rejects_non_food_category(category):
+    client = FakePoiClient({("餐饮服务", "杭州1日区域"): [poi(name="餐馆", category=category)]})
+
+    result = await FoodAgent(client).run(request(days=1), areas(days=1), REQUEST_ID, REQUEST_ID)
+
+    if category == "餐饮服务":
+        assert result.status is AgentStatus.success
+        assert result.data.daily_food[0].candidates
+    else:
+        assert result.status is AgentStatus.degraded
+        assert result.data.daily_food[0].candidates == ()
+        assert result.missing_fields == ("food_day_1_candidates",)
+
+
+@pytest.mark.asyncio
+async def test_poi_agents_use_first_area_and_expected_search_arguments():
+    client = FakePoiClient({("住宿服务", "杭州1日区域"): [poi()]})
+
+    result = await LodgingAgent(client).run(request(), areas(), REQUEST_ID, REQUEST_ID)
+
+    assert client.calls == [("住宿服务", "杭州1日区域")]
+    assert result.data.recommended_area == "杭州1日区域"
+
+
+@pytest.mark.asyncio
+async def test_poi_source_metadata_is_preserved_and_malformed_metadata_degrades():
+    updated = datetime(2026, 8, 20, tzinfo=timezone.utc)
+    client = FakePoiClient({
+        ("住宿服务", "杭州1日区域"): [poi(source_updated_at=updated, data_status="cached")],
+    })
+    result = await LodgingAgent(client).run(request(), areas(), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.success
+    assert result.sources[0].data_status is DataStatus.cached
+    assert result.sources[0].source_updated_at == updated
+    assert result.sources[0].retrieved_at == datetime(2026, 8, 21, tzinfo=timezone.utc)
+
+    bad = FakePoiClient({
+        ("住宿服务", "杭州1日区域"): [poi(retrieved_at="not-a-date")],
+    })
+    result = await LodgingAgent(bad).run(request(), areas(), REQUEST_ID, REQUEST_ID)
     assert result.status is AgentStatus.degraded
     assert result.data.candidates == ()
 
@@ -125,6 +232,40 @@ async def test_food_all_empty_degrades_with_all_days_present():
     assert result.status is AgentStatus.degraded
     assert len(result.data.daily_food) == 2
     assert result.missing_fields == ("food_day_1_candidates", "food_day_2_candidates")
+
+
+@pytest.mark.asyncio
+async def test_food_short_daily_areas_is_partial_with_missing_area_day():
+    client = FakePoiClient({("餐饮服务", "杭州1日区域"): [poi(name="餐馆", category="餐饮服务")]})
+
+    result = await FoodAgent(client).run(request(days=2), areas(days=1), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.partial
+    assert [item.day for item in result.data.daily_food] == [1]
+    assert result.missing_fields == ("food_day_2_area",)
+    assert client.calls == [("餐饮服务", "杭州1日区域")]
+
+
+@pytest.mark.asyncio
+async def test_food_empty_daily_areas_is_degraded_with_destination_fallback():
+    result = await FoodAgent(FakePoiClient()).run(request(days=2), (), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.degraded
+    assert len(result.data.daily_food) == 1
+    assert result.data.daily_food[0].day == 1
+    assert result.data.daily_food[0].area == "杭州"
+    assert result.data.daily_food[0].candidates == ()
+    assert result.missing_fields == ("food_daily_areas",)
+
+
+@pytest.mark.asyncio
+async def test_food_malformed_area_is_controlled_degradation():
+    result = await FoodAgent(FakePoiClient()).run(request(), ({"day": 1},), REQUEST_ID, REQUEST_ID)
+
+    assert result.status is AgentStatus.degraded
+    assert result.data.daily_food[0].area == "未知区域"
+    assert result.data.daily_food[0].candidates == ()
+    assert "KeyError" not in result.model_dump_json()
 
 
 @pytest.mark.asyncio

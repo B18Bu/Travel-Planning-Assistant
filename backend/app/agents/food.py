@@ -37,18 +37,39 @@ class FoodAgent:
         daily_plans: list[DailyFoodPlan] = []
         sources: list[Source] = []
         missing_fields: list[str] = []
-        for daily_area in daily_areas:
-            day, area = self._daily_area(daily_area)
+        if not daily_areas:
+            fallback = DailyFoodPlan(
+                day=1,
+                area=request.destination,
+                meal_period=None,
+                candidates=(),
+                filter_suggestions=("请先补充每日活动区域，再按区域筛选餐饮。",),
+            )
+            return AgentResult[FoodPlanData](
+                agent="food",
+                status=AgentStatus.degraded,
+                summary="餐饮活动区域暂不可用。",
+                data=FoodPlanData(daily_food=(fallback,)),
+                warnings=("未获得每日活动区域，请先核验路线区域。",),
+                missing_fields=("food_daily_areas",),
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+        for index, daily_area in enumerate(daily_areas, 1):
             try:
+                day, area = self._daily_area(daily_area)
                 raw_pois = await self.amap_client.search_poi("餐饮服务", area)
                 if not isinstance(raw_pois, list):
                     raise ValueError("POI 响应格式无效")
+                limited_pois = raw_pois[:10]
                 candidates = tuple(
-                    FoodCandidate(poi=self._poi(item, "amap:food"))
-                    for item in raw_pois[:10]
+                    FoodCandidate(poi=self._poi(item, "amap:food", "餐饮服务"))
+                    for item in limited_pois
                 )
-                self._append_sources(sources, raw_pois)
+                self._append_sources(sources, limited_pois)
             except (ExternalServiceUnavailable, KeyError, TypeError, ValueError, ValidationError):
+                day = getattr(daily_area, "day", index)
+                area = getattr(daily_area, "area", "未知区域") if not isinstance(daily_area, dict) else daily_area.get("area", "未知区域")
                 candidates = ()
             suggestions = () if candidates else ("请按营业时段、菜系与活动区域筛选，并以商家官方信息为准。",)
             if not candidates:
@@ -62,8 +83,16 @@ class FoodAgent:
                     filter_suggestions=suggestions,
                 )
             )
+        expected_days = request.days
+        existing_days = {item.day for item in daily_plans}
+        missing_fields.extend(
+            f"food_day_{day}_area"
+            for day in range(1, expected_days + 1)
+            if day not in existing_days
+        )
         data = FoodPlanData(daily_food=tuple(daily_plans))
-        if len(missing_fields) == len(daily_plans):
+        has_candidates = any(item.candidates for item in daily_plans)
+        if not daily_plans or not has_candidates:
             status = AgentStatus.degraded
         elif missing_fields:
             status = AgentStatus.partial
@@ -88,7 +117,7 @@ class FoodAgent:
         return item["day"], item["area"]
 
     @staticmethod
-    def _poi(item: dict[str, Any], source_id: str) -> PoiCandidate:
+    def _poi(item: dict[str, Any], source_id: str, expected_category: str) -> PoiCandidate:
         if not isinstance(item, dict):
             raise TypeError("POI 项格式无效")
         tags = item.get("tags", ())
@@ -96,11 +125,14 @@ class FoodAgent:
             tags = ()
         if not isinstance(tags, (list, tuple)):
             raise TypeError("POI 标签格式无效")
+        category = item.get("category")
+        if not isinstance(category, str) or category.strip() != expected_category:
+            raise ValueError("POI 分类不匹配")
         return PoiCandidate(
             name=item["name"],
             address=item.get("address"),
             location=item.get("location"),
-            category=item["category"],
+            category=category,
             tags=tuple(tags),
             source_ids=(source_id,),
         )
@@ -115,7 +147,25 @@ class FoodAgent:
                 source_updated_at=item.get("source_updated_at"),
                 retrieved_at=item["retrieved_at"],
             )
-            if source not in sources:
+            key = (
+                source.name,
+                source.type,
+                source.data_status,
+                source.source_updated_at,
+                str(source.url) if source.url is not None else None,
+                source.knowledge_version,
+            )
+            if not any(
+                (
+                    item.name,
+                    item.type,
+                    item.data_status,
+                    item.source_updated_at,
+                    str(item.url) if item.url is not None else None,
+                    item.knowledge_version,
+                ) == key
+                for item in sources
+            ):
                 sources.append(source)
 
     @staticmethod
