@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.travel import TravelPlanRequest
+from app.models.travel import AgentResult, AgentStatus, TravelPlanRequest
 from app.orchestration.sequential import SequentialTravelOrchestrator
 
 
@@ -82,6 +82,48 @@ async def test_orchestrator_continues_after_controlled_agent_failure(request_pay
 
     assert result == "document"
     assert [call[0] for call in calls] == ["weather", "route", "lodging", "food", "summary"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed_index", range(4))
+async def test_orchestrator_wraps_agent_exception_and_runs_remaining_agents(request_payload, failed_index):
+    calls = []
+    results = [
+        SimpleNamespace(constraints=("避开暴雨",), data=None),
+        SimpleNamespace(data=None),
+        "lodging-result",
+        "food-result",
+    ]
+    agents = [
+        RecordingAgent(name, result, calls, raises=index == failed_index)
+        for index, (name, result) in enumerate(zip(("weather", "route", "lodging", "food"), results))
+    ]
+    summary = RecordingSummary(calls)
+    orchestrator = SequentialTravelOrchestrator(*agents, summary)
+
+    request_id = str(uuid4())
+    result = await orchestrator.run(request_payload, request_id, request_id)
+
+    assert result == "document"
+    assert [call[0] for call in calls] == ["weather", "route", "lodging", "food", "summary"]
+    summary_args = calls[-1][1]
+    failed_result = summary_args[failed_index]
+    assert isinstance(failed_result, AgentResult)
+    assert failed_result.agent.value == ("weather", "route", "lodging", "food")[failed_index]
+    assert failed_result.status is AgentStatus.failed
+    assert failed_result.data is None
+    assert failed_result.request_id == request_id
+    assert failed_result.trace_id == request_id
+    assert failed_result.error is not None
+    assert failed_result.error.code == "agent_execution_failed"
+    assert "exploded" not in failed_result.error.message
+    assert failed_result.missing_fields
+    assert calls[-1][1][-2:] == (request_id, request_id)
+    if failed_index == 0:
+        assert calls[1][1][1] == ()
+    if failed_index == 1:
+        assert all(area.area == request_payload.destination for area in calls[2][1][1])
+        assert calls[2][1][1] == calls[3][1][1]
 
 
 @pytest.mark.asyncio
