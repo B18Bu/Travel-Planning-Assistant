@@ -4,16 +4,35 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    field_validator,
+    model_validator,
+)
+from uuid import UUID
+
+
+def validate_uuid_v1_to_v5(value: str) -> str:
+    """校验字符串为 UUID v1 至 v5。"""
+
+    parsed = UUID(value)
+    if parsed.version not in {1, 2, 3, 4, 5}:
+        raise ValueError("必须是 UUID v1 至 v5")
+    return str(parsed)
 
 
 class StrictModel(BaseModel):
-    """禁止接收未声明字段的基础模型。"""
+    """禁止接收未声明字段且构造后不可修改的基础模型。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 NonEmptyText = Annotated[str, Field(min_length=1, max_length=100)]
+UUIDV1ToV5 = Annotated[str, AfterValidator(validate_uuid_v1_to_v5)]
 
 
 class DataStatus(StrEnum):
@@ -51,6 +70,15 @@ class AgentStatus(StrEnum):
     failed = "failed"
 
 
+class AgentName(StrEnum):
+    """受控的专业 Agent 名称。"""
+
+    weather = "weather"
+    route = "route"
+    lodging = "lodging"
+    food = "food"
+
+
 class Source(StrictModel):
     """外部或知识库来源合同。"""
 
@@ -74,8 +102,11 @@ class Source(StrictModel):
                 raise ValueError("知识库来源的数据状态必须为 knowledge_base")
             if self.knowledge_version is None:
                 raise ValueError("知识库来源必须提供版本")
-        elif self.knowledge_version is not None:
-            raise ValueError("非知识库来源不得提供知识库版本")
+        else:
+            if self.data_status is DataStatus.knowledge_base:
+                raise ValueError("非知识库来源不得标记为 knowledge_base")
+            if self.knowledge_version is not None:
+                raise ValueError("非知识库来源不得提供知识库版本")
         if self.url is not None and self.url.scheme != "https":
             raise ValueError("来源 URL 仅允许 HTTPS")
         return self
@@ -96,8 +127,8 @@ class PoiCandidate(StrictModel):
     address: str | None = None
     location: str | None = None
     category: NonEmptyText
-    tags: list[NonEmptyText] = Field(default_factory=list)
-    source_ids: list[NonEmptyText] = Field(min_length=1)
+    tags: tuple[NonEmptyText, ...] = ()
+    source_ids: tuple[NonEmptyText, ...] = Field(min_length=1)
 
 
 class DailyWeather(StrictModel):
@@ -109,7 +140,7 @@ class DailyWeather(StrictModel):
     temp_max: int | None = None
     risk_level: WeatherRiskLevel
     activity_suitability: str | None = None
-    equipment_suggestions: list[NonEmptyText] = Field(default_factory=list)
+    equipment_suggestions: tuple[NonEmptyText, ...] = ()
 
 
 class RouteEstimate(StrictModel):
@@ -132,8 +163,8 @@ class WeatherPlanData(StrictModel):
     """天气 Agent 的规划结果。"""
 
     destination: NonEmptyText
-    daily: list[DailyWeather] = Field(min_length=1)
-    constraints: list[NonEmptyText] = Field(default_factory=list)
+    daily: tuple[DailyWeather, ...] = Field(min_length=1)
+    constraints: tuple[NonEmptyText, ...] = ()
 
 
 class RoutePlanData(StrictModel):
@@ -142,7 +173,7 @@ class RoutePlanData(StrictModel):
     origin: NonEmptyText
     destination: NonEmptyText
     round_trip: RouteEstimate | None = None
-    daily_areas: list[DailyArea] = Field(min_length=1)
+    daily_areas: tuple[DailyArea, ...] = Field(min_length=1)
     weather_adjusted: bool
 
 
@@ -150,8 +181,8 @@ class LodgingCandidate(StrictModel):
     """住宿候选项。"""
 
     poi: PoiCandidate
-    facilities: list[NonEmptyText] = Field(default_factory=list)
-    suitable_for: list[NonEmptyText] = Field(default_factory=list)
+    facilities: tuple[NonEmptyText, ...] = ()
+    suitable_for: tuple[NonEmptyText, ...] = ()
     commute_note: str | None = None
     recommendation_reason: str | None = None
 
@@ -161,8 +192,8 @@ class LodgingPlanData(StrictModel):
 
     nights: int = Field(ge=0)
     recommended_area: NonEmptyText
-    candidates: list[LodgingCandidate] = Field(default_factory=list)
-    filter_suggestions: list[NonEmptyText] = Field(default_factory=list)
+    candidates: tuple[LodgingCandidate, ...] = ()
+    filter_suggestions: tuple[NonEmptyText, ...] = ()
 
 
 class FoodCandidate(StrictModel):
@@ -170,9 +201,9 @@ class FoodCandidate(StrictModel):
 
     poi: PoiCandidate
     cuisine: str | None = None
-    specialties: list[NonEmptyText] = Field(default_factory=list)
-    suitable_for: list[NonEmptyText] = Field(default_factory=list)
-    dietary_notes: list[NonEmptyText] = Field(default_factory=list)
+    specialties: tuple[NonEmptyText, ...] = ()
+    suitable_for: tuple[NonEmptyText, ...] = ()
+    dietary_notes: tuple[NonEmptyText, ...] = ()
     business_hours_note: str | None = None
 
 
@@ -182,14 +213,14 @@ class DailyFoodPlan(StrictModel):
     day: int = Field(ge=1)
     area: NonEmptyText
     meal_period: str | None = None
-    candidates: list[FoodCandidate] = Field(default_factory=list)
-    filter_suggestions: list[NonEmptyText] = Field(default_factory=list)
+    candidates: tuple[FoodCandidate, ...] = ()
+    filter_suggestions: tuple[NonEmptyText, ...] = ()
 
 
 class FoodPlanData(StrictModel):
     """餐饮 Agent 的规划结果。"""
 
-    daily_food: list[DailyFoodPlan] = Field(min_length=1)
+    daily_food: tuple[DailyFoodPlan, ...] = Field(min_length=1)
 
 
 class ErrorDetail(StrictModel):
@@ -206,17 +237,17 @@ ResultData = TypeVar("ResultData")
 class AgentResult(StrictModel, Generic[ResultData]):
     """专业 Agent 的通用结果信封。"""
 
-    agent: NonEmptyText
+    agent: AgentName
     status: AgentStatus
     summary: NonEmptyText
     data: ResultData | None = None
-    constraints: list[NonEmptyText] = Field(default_factory=list)
-    sources: list[Source] = Field(default_factory=list)
-    warnings: list[NonEmptyText] = Field(default_factory=list)
-    missing_fields: list[NonEmptyText] = Field(default_factory=list)
+    constraints: tuple[NonEmptyText, ...] = ()
+    sources: tuple[Source, ...] = ()
+    warnings: tuple[NonEmptyText, ...] = ()
+    missing_fields: tuple[NonEmptyText, ...] = ()
     error: ErrorDetail | None = None
-    request_id: str
-    trace_id: str
+    request_id: UUIDV1ToV5
+    trace_id: UUIDV1ToV5
 
     @model_validator(mode="after")
     def validate_status_contract(self) -> "AgentResult[ResultData]":
@@ -233,6 +264,8 @@ class AgentResult(StrictModel, Generic[ResultData]):
                 raise ValueError("degraded 结果必须含数据及缺失字段或错误")
         elif self.data is not None or not self.missing_fields or self.error is None:
             raise ValueError("failed 结果不得含数据且必须含缺失字段和错误")
+        if self.trace_id != self.request_id:
+            raise ValueError("trace_id 必须与 request_id 一致")
         return self
 
 
@@ -244,18 +277,33 @@ class TravelPlanData(StrictModel):
     lodging: AgentResult[LodgingPlanData]
     food: AgentResult[FoodPlanData]
 
+    @model_validator(mode="after")
+    def validate_agent_slots(self) -> "TravelPlanData":
+        """校验各专业槽位只能接收同名 Agent 结果。"""
+
+        expected_agents = {
+            "weather": AgentName.weather,
+            "route": AgentName.route,
+            "lodging": AgentName.lodging,
+            "food": AgentName.food,
+        }
+        for slot, expected_agent in expected_agents.items():
+            if getattr(self, slot).agent is not expected_agent:
+                raise ValueError(f"{slot} 槽位必须包含 {expected_agent.value} Agent 结果")
+        return self
+
 
 class TravelPlanDocument(StrictModel):
     """面向调用方的最终行程文档合同。"""
 
-    request_id: str
-    trace_id: str
+    request_id: UUIDV1ToV5
+    trace_id: UUIDV1ToV5
     status: Literal[AgentStatus.success, AgentStatus.degraded, AgentStatus.failed]
     itinerary: TravelPlanData
     markdown: Annotated[str, Field(min_length=1)]
-    sources: list[Source] = Field(default_factory=list)
-    warnings: list[NonEmptyText] = Field(default_factory=list)
-    degraded_agents: list[NonEmptyText] = Field(default_factory=list)
+    sources: tuple[Source, ...] = ()
+    warnings: tuple[NonEmptyText, ...] = ()
+    degraded_agents: tuple[AgentName, ...] = ()
 
     @model_validator(mode="after")
     def validate_document_contract(self) -> "TravelPlanDocument":
@@ -272,6 +320,28 @@ class TravelPlanDocument(StrictModel):
                 raise ValueError(f"{name} 的 request_id 必须与文档一致")
             if result.trace_id != self.trace_id:
                 raise ValueError(f"{name} 的 trace_id 必须与文档一致")
+
+        expected_sources: list[Source] = []
+        seen_source_keys: set[tuple[object, ...]] = set()
+        expected_warnings: list[str] = []
+        for result in results.values():
+            for source in result.sources:
+                source_key = (
+                    source.name,
+                    source.type,
+                    source.data_status,
+                    source.source_updated_at,
+                    str(source.url) if source.url is not None else None,
+                    source.knowledge_version,
+                )
+                if source_key not in seen_source_keys:
+                    seen_source_keys.add(source_key)
+                    expected_sources.append(source)
+            expected_warnings.extend(result.warnings)
+        if self.sources != tuple(expected_sources):
+            raise ValueError("文档来源必须按专业结果首次出现顺序去重聚合")
+        if self.warnings != tuple(expected_warnings):
+            raise ValueError("文档警告必须按专业结果顺序聚合")
 
         if len(self.degraded_agents) != len(set(self.degraded_agents)):
             raise ValueError("degraded_agents 不得包含重复项")
@@ -302,9 +372,7 @@ class TravelPlanRequest(StrictModel):
     travelers: Annotated[int, Field(ge=1, le=20)]
     days: Annotated[int, Field(ge=1, le=14)] = 3
     budget: Annotated[int | None, Field(ge=0, le=200000)] = None
-    preferences: Annotated[list[NonEmptyText], Field(max_length=12)] = Field(
-        default_factory=list
-    )
+    preferences: Annotated[tuple[NonEmptyText, ...], Field(max_length=12)] = ()
 
     @field_validator("origin", "destination", mode="before")
     @classmethod

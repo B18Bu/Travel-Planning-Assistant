@@ -1,7 +1,7 @@
 # v1 旅行数据合同设计
 
 **日期：** 2026-08-19  
-**状态：** 待书面规格审查  
+**状态：** 深层不可变已实现，待验证
 **范围：** 仅定义 v1 旅行数据模型与模型测试，不实现外部服务、专业 Agent、编排器、旅行规划 API 或前端。
 
 ---
@@ -54,8 +54,9 @@ v1 已完成 FastAPI 安全应用骨架，但尚无旅行领域模型。后续�
 3. **事实与呈现分层：** `itinerary` 是机器可消费的事实结果；`markdown` 是后续汇总器根据该结果生成的阅读表现层。
 4. **时间语义清晰：** 区分上游内容更新时间与本服务获取时间，禁止用单一模糊时间字段混淆两者。
 5. **状态单一来源：** 只保留 `AgentStatus`，不再增加重复的 `degraded: bool`。
-6. **降级显式：** 非成功状态必须说明缺失字段或受控错误，不能以自由文本掩盖缺失。
+6. **降级显式：** `partial` 必须说明缺失字段；`degraded` 必须说明缺失字段或受控错误；`failed` 必须同时提供缺失字段与受控错误，不能以自由文本掩盖缺失。
 7. **禁止字段从 Schema 阻断：** 不为无授权实时或平台数据定义模型字段。
+8. **深层不可变：** 跨 Agent 传递的合同模型与其中的集合字段均不可在构造后原地修改；下游 Agent 必须构造新结果，不能补写前序结果。
 
 ---
 
@@ -66,12 +67,23 @@ v1 已完成 FastAPI 安全应用骨架，但尚无旅行领域模型。后续�
 定义内部 `StrictModel`，统一设置：
 
 ```python
-model_config = ConfigDict(extra="forbid")
+model_config = ConfigDict(extra="forbid", frozen=True)
 ```
 
-所有对外传递的领域模型继承该基类。这样，拼写错误、供应商原始字段和后续未经评审的字段不会静默通过验证。
+所有对外传递的领域模型继承该基类。所有集合字段使用元组类型，避免通过 `append`、`clear` 或嵌套对象修改绕过字段与跨字段校验。JSON 请求和响应仍使用数组；Pydantic 在模型边界将输入数组转换为元组。这样，拼写错误、供应商原始字段和后续未经评审的字段不会静默通过验证；下游只能构造新合同对象，不能改写前序结果。
 
-### 4.2 枚举
+### 4.2 深层不可变范围
+
+以下规则适用于 `TravelPlanRequest`、来源、领域事实、四类 Agent 结果、`TravelPlanData` 与 `TravelPlanDocument`：
+
+- 所有模型实例在构造后不可重新赋值；
+- 所有原本表示零至多项的字段均在模型内部以元组保存，包括偏好、标签、来源、警告、缺失字段、候选项和每日结果；
+- 所有嵌套领域模型同样不可变，因此不能通过修改 `AgentResult.data` 内部对象绕过最小长度、状态或槽位校验；
+- 后续编排步骤要添加约束、来源或建议时，必须以已有值构造新的模型实例；不得修改已收到的前序结果。
+
+本轮不定义 `partial` 专业结果映射为最终文档 `success`、`degraded` 或 `failed` 的规则。该决策必须在实现最终编排器前单独确认。
+
+### 4.3 枚举
 
 ```text
 AgentStatus
@@ -79,6 +91,12 @@ AgentStatus
 - partial
 - degraded
 - failed
+
+AgentName
+- weather
+- route
+- lodging
+- food
 
 DataStatus
 - realtime
@@ -93,9 +111,9 @@ SourceType
 - knowledge_base
 ```
 
-`AgentStatus` 描述结果完整度；`DataStatus` 描述某条来源数据的取得方式；二者不得互相替代。
+`AgentStatus` 描述结果完整度；`AgentName` 固定 v1 的四个专业 Agent 名称；`DataStatus` 描述某条来源数据的取得方式。三者不得互相替代。
 
-### 4.3 受控错误摘要
+### 4.4 受控错误摘要
 
 `ErrorDetail` 仅包括：
 
@@ -260,7 +278,7 @@ FoodPlanData
 
 | 字段 | 类型 | 规则 |
 |---|---|---|
-| `agent` | string | 固定专业 Agent 名称。 |
+| `agent` | `AgentName` | 仅允许 `weather`、`route`、`lodging`、`food`。 |
 | `status` | `AgentStatus` | 唯一状态来源。 |
 | `summary` | string | 已证实结果的简短摘要，长度受限。 |
 | `data` | `T` 或 null | `success`、`partial`、`degraded` 可含数据；`failed` 必须为 null。 |
@@ -269,8 +287,8 @@ FoodPlanData
 | `warnings` | string array | 面向用户的风险与核验提示。 |
 | `missing_fields` | string array | 非 `success` 状态必须提供至少一项，说明缺失结果。 |
 | `error` | `ErrorDetail` 或 null | `failed` 必须提供；`success` 不得提供。 |
-| `request_id` | UUID 字符串 | 本次用户请求的标识。 |
-| `trace_id` | UUID 字符串 | v1 暂与 `request_id` 值相同，保留未来兼容性。 |
+| `request_id` | UUID v1—v5 字符串 | 本次用户请求的标识。 |
+| `trace_id` | UUID v1—v5 字符串 | v1 必须与 `request_id` 值相同，保留未来兼容性。 |
 
 状态校验规则：
 
@@ -291,7 +309,7 @@ TravelPlanData
 - food: AgentResult[FoodPlanData]
 ```
 
-该模型保存每个 Agent 的状态和领域数据，供后续 API、模板渲染、测试和导出消费。它不重新解析 Markdown。
+该模型保存每个 Agent 的状态和领域数据，供后续 API、模板渲染、测试和导出消费。四个槽位中的 `agent` 必须分别为 `weather`、`route`、`lodging`、`food`，防止类型正确但职责错位的结果进入下游。它不重新解析 Markdown。
 
 ### 7.3 `TravelPlanDocument`
 
@@ -309,8 +327,8 @@ TravelPlanDocument
 
 - `itinerary` 是唯一的结构化事实载体。
 - `markdown` 仅是由后续汇总器根据 `itinerary` 生成的阅读表现层。
-- `sources` 为四个专业结果来源的去重集合。
-- `warnings` 为四个专业结果警告的聚合结果。
+- `sources` 为四个专业结果来源按 Agent 顺序首次出现的去重集合；去重键只使用 `name`、`type`、`data_status`、`source_updated_at`、`url`、`knowledge_version` 等来源事实字段，忽略每次读取可能不同的 `retrieved_at`，并保留首次出现的完整 `Source`。
+- `warnings` 为四个专业结果按 weather、route、lodging、food 顺序聚合的结果；来源或警告漏项、额外值或顺序错误时必须拒绝。
 - `degraded_agents` 只包括状态为 `degraded` 的 Agent 名称。
 - 整体状态由后续汇总器决定；本合同只限制其为 `success`、`degraded` 或 `failed`。
 
@@ -355,6 +373,7 @@ order_url
 | 禁止字段 | 保证价格、库存、可订、排队、优惠与评分等字段被拒绝，而不是静默保留。 |
 | Agent 状态 | 保证 `success`、`partial`、`degraded`、`failed` 的 data、缺失字段和错误摘要保持一致。 |
 | 最终文档 | 保证文档保留 `itinerary` 与 Markdown，且降级 Agent 列表只包含降级状态。 |
+| 深层不可变 | 保证字段重新赋值、集合原地修改和嵌套领域模型修改均被拒绝，避免构造后的结果违反状态、来源、最小长度或槽位约束。 |
 | 安全字段 | 保证未知字段、密钥字段和原始异常类字段不能进入模型序列化结果。 |
 
 本轮不测试外部 API 映射、天气规则、路线算法、Markdown 渲染或 Agent 执行顺序；这些归属后续任务。

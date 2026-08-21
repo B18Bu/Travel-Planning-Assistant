@@ -10,7 +10,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("x-request-id")
         try:
-            request.state.request_id = str(UUID(request_id)) if request_id else str(uuid4())
+            parsed = UUID(request_id) if request_id else None
+            request.state.request_id = (
+                str(parsed) if parsed is not None and parsed.version in {1, 2, 3, 4, 5} else str(uuid4())
+            )
         except ValueError:
             request.state.request_id = str(uuid4())
 

@@ -19,7 +19,7 @@
 
 ## 统一执行约定
 
-所有测试命令从仓库根目录 `D:\Claude Code\智能文旅策划Agent` 执行：
+所有测试命令从当前工作树的仓库根目录执行，不依赖主工作区绝对路径：
 
 ```powershell
 $env:PYTHONPATH = "$PWD\backend"; python -m pytest -c backend/pytest.ini backend/tests/test_models.py -v
@@ -65,7 +65,7 @@ def test_travel_plan_request_applies_defaults_and_derives_nights():
     assert request.destination == "杭州"
     assert request.days == 3
     assert request.nights == 2
-    assert request.preferences == []
+    assert request.preferences == ()
 
 
 @pytest.mark.parametrize(
@@ -100,7 +100,7 @@ $env:PYTHONPATH = "$PWD\backend"; python -m pytest -c backend/pytest.ini backend
 
 预期：FAIL，报错包含 `ModuleNotFoundError: No module named 'app.models'`。
 
-- [ ] **步骤 3：创建包与最小请求模型实现**
+- [x] **步骤 3：创建包与最小请求模型实现**
 
 创建 `backend/app/models/__init__.py`：
 
@@ -113,17 +113,28 @@ $env:PYTHONPATH = "$PWD\backend"; python -m pytest -c backend/pytest.ini backend
 ```python
 from datetime import date
 from typing import Annotated
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def validate_uuid_v1_to_v5(value: str) -> str:
+    """校验字符串为 UUID v1 至 v5。"""
+
+    parsed = UUID(value)
+    if parsed.version not in {1, 2, 3, 4, 5}:
+        raise ValueError("必须是 UUID v1 至 v5")
+    return str(parsed)
 
 
 class StrictModel(BaseModel):
     """拒绝未声明字段的领域模型基类。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 NonEmptyText = Annotated[str, Field(min_length=1, max_length=100)]
+UUIDV1ToV5 = Annotated[str, AfterValidator(validate_uuid_v1_to_v5)]
 
 
 class TravelPlanRequest(StrictModel):
@@ -135,14 +146,19 @@ class TravelPlanRequest(StrictModel):
     travelers: int = Field(ge=1, le=20)
     days: int = Field(default=3, ge=1, le=14)
     budget: int | None = Field(default=None, ge=0, le=200000)
-    preferences: list[NonEmptyText] = Field(default_factory=list, max_length=12)
+    preferences: tuple[NonEmptyText, ...] = Field(default=(), max_length=12)
 
-    @field_validator("origin", "destination", "preferences", mode="before")
+    @field_validator("origin", "destination", mode="before")
     @classmethod
-    def strip_text_values(cls, value: str | list[str]) -> str | list[str]:
-        if isinstance(value, list):
-            return [item.strip() for item in value]
+    def strip_location(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("preferences", mode="before")
+    @classmethod
+    def normalize_preferences(cls, value: list[str]) -> list[str]:
+        if not isinstance(value, list):
+            raise ValueError("preferences 必须为数组")
+        return [item.strip() for item in value]
 
     @model_validator(mode="after")
     def validate_departure_date(self) -> "TravelPlanRequest":
@@ -157,7 +173,7 @@ class TravelPlanRequest(StrictModel):
         return max(self.days - 1, 0)
 ```
 
-- [ ] **步骤 4：运行请求测试验证通过**
+- [x] **步骤 4：运行请求测试验证通过**
 
 运行：
 
@@ -205,8 +221,8 @@ from app.models.travel import (
 def test_source_preserves_distinct_update_and_retrieval_times():
     source = Source(
         name="和风天气",
-        type=SourceType.WEATHER_API,
-        data_status=DataStatus.REALTIME,
+        type=SourceType.weather_api,
+        data_status=DataStatus.realtime,
         source_updated_at=datetime(2026, 8, 19, 8, tzinfo=timezone.utc),
         retrieved_at=datetime(2026, 8, 19, 8, 1, tzinfo=timezone.utc),
         url="https://dev.qweather.com",
@@ -225,8 +241,8 @@ def test_source_preserves_distinct_update_and_retrieval_times():
             "retrieved_at": datetime.now(timezone.utc),
         },
         {
-            "name": "本地知识库",
-            "type": "knowledge_base",
+            "name": "地图服务伪装知识库",
+            "type": "map_api",
             "data_status": "knowledge_base",
             "retrieved_at": datetime.now(timezone.utc),
         },
@@ -262,13 +278,13 @@ def test_domain_fact_models_enforce_numeric_and_day_boundaries():
     weather = DailyWeather(
         date=date.today(),
         condition="多云",
-        risk_level=WeatherRiskLevel.LOW,
+        risk_level=WeatherRiskLevel.low,
     )
     route = RouteEstimate(distance_meters=12000, duration_minutes=35)
     area = DailyArea(day=1, area="西湖周边")
 
     assert poi.name == "西湖景区"
-    assert weather.risk_level is WeatherRiskLevel.LOW
+    assert weather.risk_level is WeatherRiskLevel.low
     assert route.is_estimate is True
     assert area.day == 1
 
@@ -297,7 +313,7 @@ $env:PYTHONPATH = "$PWD\backend"; python -m pytest -c backend/pytest.ini backend
 
 预期：FAIL，报错包含 `cannot import name 'DataStatus' from 'app.models.travel'`。
 
-- [ ] **步骤 3：实现来源与基础领域事实模型**
+- [x] **步骤 3：实现来源与基础领域事实模型**
 
 在 `backend/app/models/travel.py` 的 `TravelPlanRequest` 后追加：
 
@@ -312,36 +328,45 @@ from pydantic import HttpUrl
 class AgentStatus(StrEnum):
     """专业 Agent 的执行状态。"""
 
-    SUCCESS = "success"
-    PARTIAL = "partial"
-    DEGRADED = "degraded"
-    FAILED = "failed"
+    success = "success"
+    partial = "partial"
+    degraded = "degraded"
+    failed = "failed"
+
+
+class AgentName(StrEnum):
+    """受控的专业 Agent 名称。"""
+
+    weather = "weather"
+    route = "route"
+    lodging = "lodging"
+    food = "food"
 
 
 class DataStatus(StrEnum):
     """来源数据的取得方式。"""
 
-    REALTIME = "realtime"
-    CACHED = "cached"
-    KNOWLEDGE_BASE = "knowledge_base"
-    DEGRADED = "degraded"
+    realtime = "realtime"
+    cached = "cached"
+    knowledge_base = "knowledge_base"
+    degraded = "degraded"
 
 
 class SourceType(StrEnum):
     """允许的事实来源类别。"""
 
-    WEATHER_API = "weather_api"
-    MAP_API = "map_api"
-    POI_API = "poi_api"
-    KNOWLEDGE_BASE = "knowledge_base"
+    weather_api = "weather_api"
+    map_api = "map_api"
+    poi_api = "poi_api"
+    knowledge_base = "knowledge_base"
 
 
 class WeatherRiskLevel(StrEnum):
     """天气风险等级。"""
 
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
+    low = "low"
+    medium = "medium"
+    high = "high"
 
 
 class Source(StrictModel):
@@ -357,10 +382,10 @@ class Source(StrictModel):
 
     @model_validator(mode="after")
     def validate_source_metadata(self) -> "Source":
-        if self.data_status in {DataStatus.REALTIME, DataStatus.CACHED} and self.source_updated_at is None:
+        if self.data_status in {DataStatus.realtime, DataStatus.cached} and self.source_updated_at is None:
             raise ValueError("实时或缓存来源必须提供上游更新时间")
-        if self.type is SourceType.KNOWLEDGE_BASE:
-            if self.data_status is not DataStatus.KNOWLEDGE_BASE:
+        if self.type is SourceType.knowledge_base:
+            if self.data_status is not DataStatus.knowledge_base:
                 raise ValueError("知识库来源必须标记为知识库数据")
             if self.knowledge_version is None:
                 raise ValueError("知识库来源必须提供知识库版本")
@@ -386,8 +411,8 @@ class PoiCandidate(StrictModel):
     address: str | None = None
     location: str | None = None
     category: NonEmptyText
-    tags: list[NonEmptyText] = Field(default_factory=list)
-    source_ids: list[NonEmptyText] = Field(min_length=1)
+    tags: tuple[NonEmptyText, ...] = ()
+    source_ids: tuple[NonEmptyText, ...] = Field(min_length=1)
 
 
 class DailyWeather(StrictModel):
@@ -399,7 +424,7 @@ class DailyWeather(StrictModel):
     temp_max: int | None = None
     risk_level: WeatherRiskLevel
     activity_suitability: str | None = None
-    equipment_suggestions: list[NonEmptyText] = Field(default_factory=list)
+    equipment_suggestions: tuple[NonEmptyText, ...] = ()
 
 
 class RouteEstimate(StrictModel):
@@ -420,7 +445,7 @@ class DailyArea(StrictModel):
 
 说明：不要将 `Source.url` 放宽为 HTTP 或任意字符串；在模型校验中显式拒绝非 HTTPS URL。
 
-- [ ] **步骤 4：运行来源与领域事实测试验证通过**
+- [x] **步骤 4：运行来源与领域事实测试验证通过**
 
 运行：
 
@@ -468,8 +493,8 @@ from app.models.travel import (
 def make_source() -> Source:
     return Source(
         name="和风天气",
-        type=SourceType.WEATHER_API,
-        data_status=DataStatus.REALTIME,
+        type=SourceType.weather_api,
+        data_status=DataStatus.realtime,
         source_updated_at=datetime.now(timezone.utc),
         retrieved_at=datetime.now(timezone.utc),
     )
@@ -482,7 +507,7 @@ def make_weather_data() -> WeatherPlanData:
             DailyWeather(
                 date=date.today(),
                 condition="多云",
-                risk_level=WeatherRiskLevel.LOW,
+                risk_level=WeatherRiskLevel.low,
             )
         ],
     )
@@ -521,12 +546,12 @@ def test_domain_plan_models_keep_only_non_transactional_information():
 @pytest.mark.parametrize(
     ("status", "data", "missing_fields", "error"),
     [
-        (AgentStatus.SUCCESS, None, [], None),
-        (AgentStatus.SUCCESS, make_weather_data(), ["daily_forecast"], None),
-        (AgentStatus.PARTIAL, make_weather_data(), [], None),
-        (AgentStatus.DEGRADED, make_weather_data(), [], None),
-        (AgentStatus.FAILED, make_weather_data(), ["daily_forecast"], ErrorDetail(code="external_service_unavailable", message="天气服务暂不可用", retryable=True)),
-        (AgentStatus.FAILED, None, [], ErrorDetail(code="external_service_unavailable", message="天气服务暂不可用", retryable=True)),
+        (AgentStatus.success, None, [], None),
+        (AgentStatus.success, make_weather_data(), ["daily_forecast"], None),
+        (AgentStatus.partial, make_weather_data(), [], None),
+        (AgentStatus.degraded, make_weather_data(), [], None),
+        (AgentStatus.failed, make_weather_data(), ["daily_forecast"], ErrorDetail(code="external_service_unavailable", message="天气服务暂不可用", retryable=True)),
+        (AgentStatus.failed, None, [], ErrorDetail(code="external_service_unavailable", message="天气服务暂不可用", retryable=True)),
     ],
 )
 def test_agent_result_rejects_inconsistent_status(status, data, missing_fields, error):
@@ -549,7 +574,7 @@ def test_agent_result_accepts_degraded_result_with_explicit_missing_fields():
     request_id = str(uuid4())
     result = AgentResult[WeatherPlanData](
         agent="weather",
-        status=AgentStatus.DEGRADED,
+        status=AgentStatus.degraded,
         summary="仅获得首日天气信息",
         data=make_weather_data(),
         missing_fields=["remaining_daily_forecast"],
@@ -559,7 +584,7 @@ def test_agent_result_accepts_degraded_result_with_explicit_missing_fields():
         trace_id=request_id,
     )
 
-    assert result.status is AgentStatus.DEGRADED
+    assert result.status is AgentStatus.degraded
     assert result.error is None
 ```
 
@@ -573,7 +598,7 @@ $env:PYTHONPATH = "$PWD\backend"; python -m pytest -c backend/pytest.ini backend
 
 预期：FAIL，报错包含 `cannot import name 'AgentResult' from 'app.models.travel'`。
 
-- [ ] **步骤 3：实现领域计划、受控错误和泛型 Agent 结果**
+- [x] **步骤 3：实现领域计划、受控错误和泛型 Agent 结果**
 
 在 `backend/app/models/travel.py` 的 `DailyArea` 后追加：
 
@@ -585,8 +610,8 @@ class WeatherPlanData(StrictModel):
     """天气 Agent 的领域结果。"""
 
     destination: NonEmptyText
-    daily: list[DailyWeather] = Field(min_length=1)
-    constraints: list[NonEmptyText] = Field(default_factory=list)
+    daily: tuple[DailyWeather, ...] = Field(min_length=1)
+    constraints: tuple[NonEmptyText, ...] = ()
 
 
 class RoutePlanData(StrictModel):
@@ -595,7 +620,7 @@ class RoutePlanData(StrictModel):
     origin: NonEmptyText
     destination: NonEmptyText
     round_trip: RouteEstimate | None = None
-    daily_areas: list[DailyArea] = Field(min_length=1)
+    daily_areas: tuple[DailyArea, ...] = Field(min_length=1)
     weather_adjusted: bool
 
 
@@ -603,8 +628,8 @@ class LodgingCandidate(StrictModel):
     """住宿区域候选。"""
 
     poi: PoiCandidate
-    facilities: list[NonEmptyText] = Field(default_factory=list)
-    suitable_for: list[NonEmptyText] = Field(default_factory=list)
+    facilities: tuple[NonEmptyText, ...] = ()
+    suitable_for: tuple[NonEmptyText, ...] = ()
     commute_note: str | None = None
     recommendation_reason: str | None = None
 
@@ -614,8 +639,8 @@ class LodgingPlanData(StrictModel):
 
     nights: int = Field(ge=0)
     recommended_area: NonEmptyText
-    candidates: list[LodgingCandidate] = Field(default_factory=list)
-    filter_suggestions: list[NonEmptyText] = Field(default_factory=list)
+    candidates: tuple[LodgingCandidate, ...] = ()
+    filter_suggestions: tuple[NonEmptyText, ...] = ()
 
 
 class FoodCandidate(StrictModel):
@@ -623,9 +648,9 @@ class FoodCandidate(StrictModel):
 
     poi: PoiCandidate
     cuisine: str | None = None
-    specialties: list[NonEmptyText] = Field(default_factory=list)
-    suitable_for: list[NonEmptyText] = Field(default_factory=list)
-    dietary_notes: list[NonEmptyText] = Field(default_factory=list)
+    specialties: tuple[NonEmptyText, ...] = ()
+    suitable_for: tuple[NonEmptyText, ...] = ()
+    dietary_notes: tuple[NonEmptyText, ...] = ()
     business_hours_note: str | None = None
 
 
@@ -635,14 +660,14 @@ class DailyFoodPlan(StrictModel):
     day: int = Field(ge=1)
     area: NonEmptyText
     meal_period: str | None = None
-    candidates: list[FoodCandidate] = Field(default_factory=list)
-    filter_suggestions: list[NonEmptyText] = Field(default_factory=list)
+    candidates: tuple[FoodCandidate, ...] = ()
+    filter_suggestions: tuple[NonEmptyText, ...] = ()
 
 
 class FoodPlanData(StrictModel):
     """餐饮 Agent 的领域结果。"""
 
-    daily_food: list[DailyFoodPlan] = Field(min_length=1)
+    daily_food: tuple[DailyFoodPlan, ...] = Field(min_length=1)
 
 
 class ErrorDetail(StrictModel):
@@ -659,31 +684,33 @@ ResultData = TypeVar("ResultData")
 class AgentResult(StrictModel, Generic[ResultData]):
     """专业 Agent 的强类型执行结果。"""
 
-    agent: NonEmptyText
+    agent: AgentName
     status: AgentStatus
     summary: NonEmptyText
     data: ResultData | None = None
-    constraints: list[NonEmptyText] = Field(default_factory=list)
-    sources: list[Source] = Field(default_factory=list)
-    warnings: list[NonEmptyText] = Field(default_factory=list)
-    missing_fields: list[NonEmptyText] = Field(default_factory=list)
+    constraints: tuple[NonEmptyText, ...] = ()
+    sources: tuple[Source, ...] = ()
+    warnings: tuple[NonEmptyText, ...] = ()
+    missing_fields: tuple[NonEmptyText, ...] = ()
     error: ErrorDetail | None = None
-    request_id: str
-    trace_id: str
+    request_id: UUIDV1ToV5
+    trace_id: UUIDV1ToV5
 
     @model_validator(mode="after")
     def validate_status_payload(self) -> "AgentResult[ResultData]":
-        if self.status is AgentStatus.SUCCESS:
+        if self.status is AgentStatus.success:
             if self.data is None or self.missing_fields or self.error is not None:
                 raise ValueError("成功结果必须有数据且不得包含缺失字段或错误")
-        elif self.status is AgentStatus.PARTIAL:
+        elif self.status is AgentStatus.partial:
             if self.data is None or not self.missing_fields:
                 raise ValueError("部分结果必须有数据和缺失字段")
-        elif self.status is AgentStatus.DEGRADED:
+        elif self.status is AgentStatus.degraded:
             if self.data is None or (not self.missing_fields and self.error is None):
                 raise ValueError("降级结果必须有数据且说明缺失字段或错误")
         elif self.data is not None or not self.missing_fields or self.error is None:
             raise ValueError("失败结果不得有数据且必须说明缺失字段和错误")
+        if self.trace_id != self.request_id:
+            raise ValueError("trace_id 必须与 request_id 一致")
         return self
 ```
 
@@ -695,7 +722,7 @@ from typing import Annotated, Generic, Literal, TypeVar
 
 不要保留重复导入，也不要为 `AgentResult` 加 `degraded: bool`。
 
-- [ ] **步骤 4：运行领域计划与状态测试验证通过**
+- [x] **步骤 4：运行领域计划与状态测试验证通过**
 
 运行：
 
@@ -727,7 +754,7 @@ git commit -m "feat: add typed agent result contracts"
 在 `backend/tests/test_models.py` 的现有内容后追加：
 
 ```python
-from app.models.travel import DailyFoodPlan, TravelPlanData, TravelPlanDocument
+from app.models.travel import AgentName, DailyFoodPlan, TravelPlanData, TravelPlanDocument
 
 
 def make_result(agent: str, status: AgentStatus, data, request_id: str):
@@ -739,77 +766,108 @@ def make_result(agent: str, status: AgentStatus, data, request_id: str):
         "request_id": request_id,
         "trace_id": request_id,
     }
-    if status is AgentStatus.DEGRADED:
+    if status is AgentStatus.degraded:
         payload["missing_fields"] = ["optional_detail"]
     return payload
 
 
 def test_travel_plan_document_preserves_typed_itinerary_and_markdown():
     request_id = str(uuid4())
+    shared_source = make_source()
     itinerary = TravelPlanData(
-        weather=AgentResult[WeatherPlanData](**make_result("weather", AgentStatus.SUCCESS, make_weather_data(), request_id)),
+        weather=AgentResult[WeatherPlanData](
+            **{
+                **make_result("weather", AgentStatus.success, make_weather_data(), request_id),
+                "sources": [shared_source],
+                "warnings": ["天气信息请在出行前复核。"],
+            }
+        ),
         route=AgentResult[RoutePlanData](
-            **make_result(
-                "route",
-                AgentStatus.SUCCESS,
-                RoutePlanData(
-                    origin="上海",
-                    destination="杭州",
-                    daily_areas=[DailyArea(day=1, area="西湖周边")],
-                    weather_adjusted=True,
+            **{
+                **make_result(
+                    "route",
+                    AgentStatus.success,
+                    RoutePlanData(
+                        origin="上海",
+                        destination="杭州",
+                        daily_areas=[DailyArea(day=1, area="西湖周边")],
+                        weather_adjusted=True,
+                    ),
+                    request_id,
                 ),
-                request_id,
-            )
+                "sources": [shared_source],
+                "warnings": ["路线时间仅为估算。"],
+            }
         ),
         lodging=AgentResult[LodgingPlanData](
-            **make_result(
-                "lodging",
-                AgentStatus.DEGRADED,
-                LodgingPlanData(nights=2, recommended_area="西湖周边"),
-                request_id,
-            )
+            **{
+                **make_result(
+                    "lodging",
+                    AgentStatus.degraded,
+                    LodgingPlanData(nights=2, recommended_area="西湖周边"),
+                    request_id,
+                ),
+                "sources": [shared_source],
+                "warnings": ["住宿候选信息不完整。"],
+            }
         ),
         food=AgentResult[FoodPlanData](
-            **make_result(
-                "food",
-                AgentStatus.SUCCESS,
-                FoodPlanData(daily_food=[DailyFoodPlan(day=1, area="西湖周边")]),
-                request_id,
-            )
+            **{
+                **make_result(
+                    "food",
+                    AgentStatus.success,
+                    FoodPlanData(daily_food=[DailyFoodPlan(day=1, area="西湖周边")]),
+                    request_id,
+                ),
+                "sources": [shared_source],
+                "warnings": ["餐饮营业信息请复核。"],
+            }
         ),
     )
     document = TravelPlanDocument(
         request_id=request_id,
         trace_id=request_id,
-        status=AgentStatus.DEGRADED,
+        status=AgentStatus.degraded,
         itinerary=itinerary,
         markdown="# 杭州 3 日行程\n\n请通过官方渠道确认营业信息。",
-        sources=[make_source()],
-        warnings=["住宿候选信息不完整。"],
+        sources=[shared_source],
+        warnings=[
+            "天气信息请在出行前复核。",
+            "路线时间仅为估算。",
+            "住宿候选信息不完整。",
+            "餐饮营业信息请复核。",
+        ],
         degraded_agents=["lodging"],
     )
 
     assert document.itinerary.weather.data.destination == "杭州"
     assert document.markdown.startswith("# 杭州")
-    assert document.degraded_agents == ["lodging"]
+    assert document.sources == (shared_source,)
+    assert document.warnings == (
+        "天气信息请在出行前复核。",
+        "路线时间仅为估算。",
+        "住宿候选信息不完整。",
+        "餐饮营业信息请复核。",
+    )
+    assert document.degraded_agents == (AgentName.lodging,)
 
 
 @pytest.mark.parametrize(
     ("status", "degraded_agents"),
     [
-        (AgentStatus.SUCCESS, ["lodging"]),
-        (AgentStatus.FAILED, ["lodging"]),
-        (AgentStatus.DEGRADED, ["weather"]),
+        (AgentStatus.success, ["lodging"]),
+        (AgentStatus.failed, ["lodging"]),
+        (AgentStatus.degraded, ["weather"]),
     ],
 )
 def test_travel_plan_document_rejects_inconsistent_degraded_agent_list(status, degraded_agents):
     request_id = str(uuid4())
     itinerary = TravelPlanData(
-        weather=AgentResult[WeatherPlanData](**make_result("weather", AgentStatus.SUCCESS, make_weather_data(), request_id)),
+        weather=AgentResult[WeatherPlanData](**make_result("weather", AgentStatus.success, make_weather_data(), request_id)),
         route=AgentResult[RoutePlanData](
             **make_result(
                 "route",
-                AgentStatus.SUCCESS,
+                AgentStatus.success,
                 RoutePlanData(
                     origin="上海",
                     destination="杭州",
@@ -822,7 +880,7 @@ def test_travel_plan_document_rejects_inconsistent_degraded_agent_list(status, d
         lodging=AgentResult[LodgingPlanData](
             **make_result(
                 "lodging",
-                AgentStatus.SUCCESS,
+                AgentStatus.success,
                 LodgingPlanData(nights=2, recommended_area="西湖周边"),
                 request_id,
             )
@@ -830,7 +888,7 @@ def test_travel_plan_document_rejects_inconsistent_degraded_agent_list(status, d
         food=AgentResult[FoodPlanData](
             **make_result(
                 "food",
-                AgentStatus.SUCCESS,
+                AgentStatus.success,
                 FoodPlanData(daily_food=[DailyFoodPlan(day=1, area="西湖周边")]),
                 request_id,
             )
@@ -858,7 +916,7 @@ $env:PYTHONPATH = "$PWD\backend"; python -m pytest -c backend/pytest.ini backend
 
 预期：FAIL，报错包含 `cannot import name 'TravelPlanData' from 'app.models.travel'`。
 
-- [ ] **步骤 3：实现最终结构化行程与文档模型**
+- [x] **步骤 3：实现最终结构化行程与文档模型**
 
 在 `backend/app/models/travel.py` 的 `AgentResult` 后追加：
 
@@ -872,17 +930,31 @@ class TravelPlanData(StrictModel):
     food: AgentResult[FoodPlanData]
 
 
+    @model_validator(mode="after")
+    def validate_agent_slots(self) -> "TravelPlanData":
+        expected_agents = {
+            "weather": AgentName.weather,
+            "route": AgentName.route,
+            "lodging": AgentName.lodging,
+            "food": AgentName.food,
+        }
+        for slot, expected_agent in expected_agents.items():
+            if getattr(self, slot).agent is not expected_agent:
+                raise ValueError(f"{slot} 槽位必须包含 {expected_agent.value} Agent 结果")
+        return self
+
+
 class TravelPlanDocument(StrictModel):
     """供 API 返回的结构化行程与 Markdown 文档。"""
 
-    request_id: str
-    trace_id: str
-    status: Literal[AgentStatus.SUCCESS, AgentStatus.DEGRADED, AgentStatus.FAILED]
+    request_id: UUIDV1ToV5
+    trace_id: UUIDV1ToV5
+    status: Literal[AgentStatus.success, AgentStatus.degraded, AgentStatus.failed]
     itinerary: TravelPlanData
     markdown: str = Field(min_length=1)
-    sources: list[Source] = Field(default_factory=list)
-    warnings: list[NonEmptyText] = Field(default_factory=list)
-    degraded_agents: list[NonEmptyText] = Field(default_factory=list)
+    sources: tuple[Source, ...] = ()
+    warnings: tuple[NonEmptyText, ...] = ()
+    degraded_agents: tuple[AgentName, ...] = ()
 
     @model_validator(mode="after")
     def validate_degraded_agents(self) -> "TravelPlanDocument":
@@ -905,20 +977,22 @@ class TravelPlanDocument(StrictModel):
                 "lodging": self.itinerary.lodging,
                 "food": self.itinerary.food,
             }.items()
-            if result.status is AgentStatus.DEGRADED
+            if result.status is AgentStatus.degraded
         }
         if set(self.degraded_agents) != actual_degraded_agents:
             raise ValueError("降级 Agent 列表必须与行程中的降级结果一致")
-        if self.status is AgentStatus.SUCCESS and actual_degraded_agents:
+        if self.status is AgentStatus.success and actual_degraded_agents:
             raise ValueError("含降级结果的文档不得标记为成功")
-        if self.status is AgentStatus.FAILED and not any(
-            result.status is AgentStatus.FAILED for result in results
+        if self.status is AgentStatus.failed and not any(
+            result.status is AgentStatus.failed for result in results
         ):
             raise ValueError("失败文档必须包含失败的专业结果")
         return self
 ```
 
-- [ ] **步骤 4：运行模型测试与完整后端回归**
+实现约束：`TravelPlanDocument` 必须从 `weather`、`route`、`lodging`、`food` 四个结果重新计算并校验顶层 `sources` 与 `warnings`，不能只校验调用方传入值。来源去重键只能使用 `name`、`type`、`data_status`、`source_updated_at`、`url` 和 `knowledge_version` 等来源事实字段，明确忽略每次读取都会变化的 `retrieved_at`；相同键的来源只保留四个 Agent 顺序中首次出现的完整 `Source` 实例。`warnings` 必须按 weather、route、lodging、food 顺序拼接。测试应使用不同 `Source` 实例、相同去重键且可有不同 `retrieved_at`，以防实现退回按对象身份或包含 `retrieved_at` 去重；来源或警告有漏项、额外值或顺序错误时必须拒绝。
+
+- [x] **步骤 4：运行模型测试与完整后端回归**
 
 先运行模型测试：
 
@@ -961,11 +1035,17 @@ rg -n "degraded: bool|price:|inventory:|availability:|queue_time:|discount:|rati
 - [ ] **步骤 6：Commit**
 
 ```powershell
-git add backend/app/models/travel.py backend/tests/test_models.py
+git add backend/app/models/travel.py backend/app/security.py backend/tests/test_models.py backend/tests/test_api.py
 git commit -m "feat: add travel plan document contract"
 ```
 
 ---
+
+## 验证记录
+
+- 红灯阶段：API UUID v6 用例因安全中间件原样回显 v6 失败；非知识库来源使用 `knowledge_base` 状态的 3 个用例因模型未拒绝失败；文档来源/警告漏项与伪造值用例因未强制聚合失败。序列化回归用例已先通过，证明既有 JSON 数组行为满足要求。
+- 本次绿灯验证：定向 API 测试 2 项通过，定向模型测试 6 项通过；完整模型测试 142 项通过；完整后端测试 147 项通过；`git diff --check` 通过。
+- 任务 4 步骤 4 已完成并勾选；红灯历史步骤保持未勾选，红灯命令与失败原因如上；未提交。
 
 ## 计划自检
 
