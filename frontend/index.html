@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>智能文旅策划助手</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <p class="eyebrow">同源旅行规划</p>
+      <h1>智能文旅策划助手</h1>
+      <p>填写基础行程信息，获取结构化、可核验的旅行建议。</p>
+    </header>
+
+    <form id="travel-form" class="travel-form">
+      <div class="form-grid">
+        <label>出发地<input name="origin" required maxlength="100" autocomplete="address-level2"></label>
+        <label>目的地<input name="destination" required maxlength="100" autocomplete="address-level2"></label>
+        <label>出行日期<input name="departure_date" type="date" required></label>
+        <label>出行人数<input name="travelers" type="number" min="1" max="20" value="1" required></label>
+        <label>出行天数<input name="days" type="number" min="1" max="14" value="3"></label>
+        <label>预算（元）<input name="budget" type="number" min="0" max="200000"></label>
+        <label class="wide-field">偏好（用逗号分隔）<input name="preferences" maxlength="600" placeholder="例如：亲子, 美食"></label>
+      </div>
+      <button type="submit">生成旅行规划</button>
+    </form>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p id="error" class="message error" role="alert" hidden></p>
+
+    <section id="result" class="result-layout" hidden aria-label="旅行规划结果">
+      <article class="plan-panel">
+        <h2>行程规划</h2>
+        <div id="markdown" class="markdown-body"></div>
+      </article>
+      <aside class="details-panel">
+        <section><h2>待核验事项</h2><ul id="warnings"></ul></section>
+        <section><h2>来源与更新时间</h2><ul id="sources"></ul></section>
+        <section><h2>降级说明</h2><ul id="degraded"></ul></section>
+      </aside>
+    </section>
+  </main>
+  <script src="/vendor/marked.min.js"></script>
+  <script src="/vendor/purify.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.travel import router as travel_router
 from app.config import Settings, get_settings
 from app.dependencies import build_orchestrator
 from app.security import SecurityHeadersMiddleware
+
+
+def _frontend_dir() -> Path:
+    """返回前端静态资源目录。"""
+
+    return Path(__file__).resolve().parents[2] / "frontend"
 
 
 def create_app(orchestrator=None, settings: Settings | None = None) -> FastAPI:
@@ -38,6 +47,9 @@ def create_app(orchestrator=None, settings: Settings | None = None) -> FastAPI:
         return {"status": "ready"}
 
     app.include_router(travel_router)
+    frontend_dir = _frontend_dir()
+    if frontend_dir.is_dir():
+        app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
     return app
 
 
