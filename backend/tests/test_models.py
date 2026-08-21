@@ -290,14 +290,19 @@ def test_source_rejects_commercial_fields():
 
 
 @pytest.mark.parametrize("data_status", [DataStatus.realtime, DataStatus.cached])
-def test_source_requires_upstream_time_for_realtime_or_cached(data_status):
+def test_source_allows_missing_upstream_time_for_external_data(data_status):
+    source = Source(
+        name="天气服务",
+        type=SourceType.weather_api,
+        data_status=data_status,
+        retrieved_at=datetime(2026, 8, 19, 10),
+    )
+    assert source.source_updated_at is None
+
+
+def test_source_still_requires_retrieved_at():
     with pytest.raises(ValidationError):
-        Source(
-            name="天气服务",
-            type=SourceType.weather_api,
-            data_status=data_status,
-            retrieved_at=datetime(2026, 8, 19, 10),
-        )
+        Source(name="天气服务", type=SourceType.weather_api, data_status=DataStatus.realtime)
 
 
 def test_source_requires_knowledge_version_for_knowledge_base():
@@ -775,7 +780,7 @@ def travel_plan_data(request_id="550e8400-e29b-41d4-a716-446655440000", trace_id
             data=WeatherPlanData(**weather_plan_payload()),
             sources=[document_source("公共来源"), document_source("天气来源", SourceType.weather_api)],
             warnings=["天气提示"],
-            missing_fields=["次日天气"] if statuses.get("weather") is AgentStatus.degraded else [],
+            missing_fields=["次日天气"] if statuses.get("weather") in {AgentStatus.partial, AgentStatus.degraded} else [],
             request_id=request_id,
             trace_id=trace_id,
         ),
@@ -791,7 +796,7 @@ def travel_plan_data(request_id="550e8400-e29b-41d4-a716-446655440000", trace_id
                 document_source("路线来源", SourceType.map_api),
             ],
             warnings=["路线提示"],
-            missing_fields=["第二天路线"] if statuses.get("route") is AgentStatus.degraded else [],
+            missing_fields=["第二天路线"] if statuses.get("route") in {AgentStatus.partial, AgentStatus.degraded} else [],
             request_id=request_id,
             trace_id=trace_id,
         ),
@@ -802,7 +807,7 @@ def travel_plan_data(request_id="550e8400-e29b-41d4-a716-446655440000", trace_id
             data=LodgingPlanData(nights=2, recommended_area="西湖景区", candidates=[LodgingCandidate(poi=poi)]),
             sources=[document_source("公共来源"), document_source("住宿来源")],
             warnings=["住宿提示"],
-            missing_fields=["停车信息"] if statuses.get("lodging") is AgentStatus.degraded else [],
+            missing_fields=["停车信息"] if statuses.get("lodging") in {AgentStatus.partial, AgentStatus.degraded} else [],
             request_id=request_id,
             trace_id=trace_id,
         ),
@@ -813,7 +818,7 @@ def travel_plan_data(request_id="550e8400-e29b-41d4-a716-446655440000", trace_id
             data=FoodPlanData(daily_food=[DailyFoodPlan(day=1, area="西湖景区", candidates=[FoodCandidate(poi=poi)])]),
             sources=[document_source("公共来源"), document_source("餐饮来源")],
             warnings=["餐饮提示"],
-            missing_fields=["晚餐信息"] if statuses.get("food") is AgentStatus.degraded else [],
+            missing_fields=["晚餐信息"] if statuses.get("food") in {AgentStatus.partial, AgentStatus.degraded} else [],
             request_id=request_id,
             trace_id=trace_id,
         ),
@@ -982,6 +987,32 @@ def test_travel_plan_document_enforces_aggregate_status_contract(status, statuse
     else:
         payload = travel_plan_document_payload(status=status, statuses=statuses)
 
+    with pytest.raises(ValidationError):
+        TravelPlanDocument(**payload)
+
+
+def test_travel_plan_document_allows_partial_agent_in_degraded_document():
+    payload = travel_plan_document_payload(status=AgentStatus.degraded, statuses={"weather": AgentStatus.partial})
+    payload["degraded_agents"] = []
+    document = TravelPlanDocument(**payload)
+    assert document.status is AgentStatus.degraded
+    assert document.degraded_agents == ()
+
+
+def test_travel_plan_document_rejects_degraded_without_partial_or_degraded_agent():
+    payload = travel_plan_document_payload(status=AgentStatus.degraded)
+    with pytest.raises(ValidationError):
+        TravelPlanDocument(**payload)
+
+
+def test_travel_plan_document_rejects_failed_status_without_failed_agent():
+    payload = travel_plan_document_payload(status=AgentStatus.failed)
+    with pytest.raises(ValidationError):
+        TravelPlanDocument(**payload)
+
+
+def test_travel_plan_document_rejects_success_with_partial_agent():
+    payload = travel_plan_document_payload(status=AgentStatus.success, statuses={"weather": AgentStatus.partial})
     with pytest.raises(ValidationError):
         TravelPlanDocument(**payload)
 

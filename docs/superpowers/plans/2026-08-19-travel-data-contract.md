@@ -382,8 +382,6 @@ class Source(StrictModel):
 
     @model_validator(mode="after")
     def validate_source_metadata(self) -> "Source":
-        if self.data_status in {DataStatus.realtime, DataStatus.cached} and self.source_updated_at is None:
-            raise ValueError("实时或缓存来源必须提供上游更新时间")
         if self.type is SourceType.knowledge_base:
             if self.data_status is not DataStatus.knowledge_base:
                 raise ValueError("知识库来源必须标记为知识库数据")
@@ -1056,6 +1054,7 @@ git commit -m "feat: add travel plan document contract"
 - POI、天气、路线的基础事实模型、禁止字段和数值边界：任务 2。
 - 天气、路线、住宿、餐饮四类领域计划结果：任务 3。
 - `success`、`partial`、`degraded`、`failed` 的唯一状态与跨字段约束：任务 3。
+- 顶层 `success` 不得含 `partial`、`degraded` 或 `failed`；顶层 `degraded` 至少含 `partial` 或 `degraded` 且不得含 `failed`；顶层 `failed` 必须含 `failed`；`degraded_agents` 只列 `degraded`：任务 4。
 - 受控错误、警告、缺失字段、请求与追踪标识：任务 3。
 - `TravelPlanData`、`TravelPlanDocument`、结构化 `itinerary + markdown`、降级 Agent 一致性：任务 4。
 - 模型拒绝密钥、原始异常和其他未知安全字段：任务 1 与任务 2 的 `extra="forbid"` 测试；任务 4 的全量回归。
@@ -1069,5 +1068,6 @@ git commit -m "feat: add travel plan document contract"
 
 - 所有任务都使用同一组 `AgentStatus`、`Source`、`WeatherPlanData`、`RoutePlanData`、`LodgingPlanData`、`FoodPlanData`、`AgentResult`、`TravelPlanData` 与 `TravelPlanDocument` 名称。
 - `AgentResult` 的状态约束与规格中的 `success`、`partial`、`degraded`、`failed` 规则一致。
-- `TravelPlanDocument.degraded_agents` 始终由 `TravelPlanData` 内的四个 `AgentResult.status` 推导和验证。
+- `TravelPlanDocument` 的顶层状态约束与规格一致：`success` 排除所有非成功专业状态，`degraded` 接受 `partial` 或 `degraded` 但排除 `failed`，`failed` 必须含 `failed`。
+- `TravelPlanDocument.degraded_agents` 始终由 `TravelPlanData` 内状态为 `degraded` 的 `AgentResult` 推导和验证；仅有 `partial` 时为空。
 - 计划只创建模型包、模型实现与测试，不修改已完成的安全后端骨架。

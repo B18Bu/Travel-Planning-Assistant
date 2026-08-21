@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from hashlib import sha256
+import json
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 
@@ -13,49 +14,41 @@ from app.services.resilience import CircuitBreaker, ExternalServiceUnavailable, 
 class HeWeatherClient:
     """和风天气逐日预报的受控只读客户端。"""
 
-    _allowed_host = "devapi.qweather.com"
+    _base_url = "https://devapi.qweather.com"
 
-    def __init__(
-        self,
-        api_key: str,
-        base_url: str = "https://devapi.qweather.com",
-        cache: MemoryCache | None = None,
-        breaker: CircuitBreaker | None = None,
-        max_attempts: int = 3,
-        cache_ttl_seconds: float = 1800,
-        timeout: httpx.Timeout | float = 10.0,
-    ) -> None:
-        parsed = urlparse(base_url)
-        if parsed.scheme != "https" or parsed.hostname != self._allowed_host or parsed.path not in ("", "/"):
+    def __init__(self, api_key: str, base_url: str = _base_url, cache: MemoryCache | None = None, breaker: CircuitBreaker | None = None, max_attempts: int = 3, cache_ttl_seconds: float = 1800, timeout: httpx.Timeout | float = 10.0) -> None:
+        if base_url != self._base_url:
             raise ExternalServiceUnavailable("和风天气服务地址不受支持")
         if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 3:
             raise ValueError("max_attempts 必须在 1 到 3 之间")
         self.api_key = api_key
-        self.base_url = f"https://{self._allowed_host}"
         self.cache = cache or MemoryCache()
-        self.breaker = breaker or CircuitBreaker(failure_threshold=3, open_seconds=60)
+        self.breaker = breaker or CircuitBreaker(3, 60)
         self.max_attempts = max_attempts
         self.cache_ttl_seconds = cache_ttl_seconds
         self.timeout = timeout
 
     async def daily_forecast(self, location_id: str, start: date, days: int) -> dict[str, Any]:
+        self._require_key()
+        if not isinstance(location_id, str) or not location_id.strip():
+            raise ExternalServiceUnavailable("和风天气请求地点无效")
+        if type(start) is not date:
+            raise ExternalServiceUnavailable("和风天气请求日期无效")
         if not isinstance(days, int) or isinstance(days, bool) or days <= 0:
             raise ExternalServiceUnavailable("和风天气请求天数无效")
-        cache_key = f"weather:{location_id}:{start.isoformat()}:{days}"
+        effective_days = min(days, 3)
+        cache_key = self._cache_key(location_id, start, effective_days)
         cached = self.cache.get(cache_key)
         if cached is not None:
             return {**cached, "data_status": "cached", "retrieved_at": datetime.now(timezone.utc)}
-        if not self.api_key.strip():
-            raise ExternalServiceUnavailable("和风天气 API 密钥未配置")
         self.breaker.ensure_available()
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await request_with_retry(
-                    lambda: client.get(f"{self.base_url}/v7/weather/3d", params={"location": location_id, "key": self.api_key}),
-                    max_attempts=self.max_attempts,
-                )
+                response = await request_with_retry(lambda: client.get(f"{self._base_url}/v7/weather/3d", params={"location": location_id, "key": self.api_key}), max_attempts=self.max_attempts)
+                if not 200 <= response.status_code < 300:
+                    raise ExternalServiceUnavailable("和风天气未返回有效数据")
                 payload = response.json()
-            normalized = self._normalize(payload, start, days)
+            normalized = self._normalize(payload, start, effective_days)
         except ExternalServiceUnavailable:
             self.breaker.record_failure()
             raise
@@ -65,6 +58,18 @@ class HeWeatherClient:
         self.cache.set(cache_key, normalized, ttl_seconds=self.cache_ttl_seconds)
         self.breaker.record_success()
         return {**normalized, "data_status": "realtime", "retrieved_at": datetime.now(timezone.utc)}
+
+    def _require_key(self) -> None:
+        if not isinstance(self.api_key, str) or not self.api_key.strip():
+            raise ExternalServiceUnavailable("和风天气 API 密钥未配置")
+
+    def _cache_key(self, location_id: str, start: date, effective_days: int) -> str:
+        fingerprint = sha256(self.api_key.encode("utf-8")).hexdigest()[:16]
+        return json.dumps(
+            ["weather", fingerprint, location_id, start.isoformat(), effective_days],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
 
     @staticmethod
     def _normalize(payload: object, start: date, days: int) -> dict[str, Any]:
@@ -81,15 +86,13 @@ class HeWeatherClient:
             item_date = date.fromisoformat(item["fxDate"])
             if item_date < start:
                 continue
-            daily.append({
-                "date": item_date,
-                "condition": item.get("textDay"),
-                "temp_min": _optional_int(item.get("tempMin")),
-                "temp_max": _optional_int(item.get("tempMax")),
-            })
+            condition = item.get("textDay")
+            if not isinstance(condition, str) or not condition.strip():
+                raise ValueError("天气状况无效")
+            daily.append({"date": item_date, "condition": condition, "temp_min": _optional_int(item.get("tempMin")), "temp_max": _optional_int(item.get("tempMax"))})
         daily.sort(key=lambda item: item["date"])
-        daily = daily[: min(days, 3)]
-        if not daily or any(item["condition"] is None for item in daily):
+        daily = daily[:days]
+        if not daily:
             raise ValueError("天气日期无匹配")
         return {"source_updated_at": source_updated_at, "daily": tuple(daily)}
 
@@ -102,6 +105,12 @@ def _aware_datetime(value: object) -> datetime:
 
 
 def _optional_int(value: object) -> int | None:
-    if value is None or value == "":
+    if value is None:
         return None
-    return int(value)
+    if isinstance(value, bool):
+        raise ValueError("温度类型无效")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value.strip())
+    raise ValueError("温度类型无效")

@@ -81,7 +81,7 @@ model_config = ConfigDict(extra="forbid", frozen=True)
 - 所有嵌套领域模型同样不可变，因此不能通过修改 `AgentResult.data` 内部对象绕过最小长度、状态或槽位校验；
 - 后续编排步骤要添加约束、来源或建议时，必须以已有值构造新的模型实例；不得修改已收到的前序结果。
 
-本轮不定义 `partial` 专业结果映射为最终文档 `success`、`degraded` 或 `failed` 的规则。该决策必须在实现最终编排器前单独确认。
+顶层文档状态必须与专业结果状态一致：`success` 不得包含 `partial`、`degraded` 或 `failed`；`degraded` 至少包含一个 `partial` 或 `degraded`，且不得包含 `failed`；`failed` 必须包含至少一个 `failed` 专业结果。`degraded_agents` 只列状态为 `degraded` 的 Agent；仅有 `partial` 结果时可以为空。
 
 ### 4.3 枚举
 
@@ -150,7 +150,7 @@ SourceType
 | `name` | string | 来源名称，长度 1—100。 |
 | `type` | `SourceType` | 来源类别。 |
 | `data_status` | `DataStatus` | 实时、缓存、知识库或降级。 |
-| `source_updated_at` | datetime 或 null | 上游内容或数据声明的更新时间；实时、缓存数据必须提供。 |
+| `source_updated_at` | datetime 或 null | 仅在供应商真实提供上游更新时间时填写；缺失时为 null，不得用本次读取时间伪造。 |
 | `retrieved_at` | datetime | 本服务获取或读取该数据的时间，必须提供。 |
 | `url` | HTTPS URL 或 null | 外部来源可提供；仅允许 HTTPS。 |
 | `knowledge_version` | string 或 null | 知识库来源必须提供；其他来源不得提供。 |
@@ -329,7 +329,8 @@ TravelPlanDocument
 - `markdown` 仅是由后续汇总器根据 `itinerary` 生成的阅读表现层。
 - `sources` 为四个专业结果来源按 Agent 顺序首次出现的去重集合；去重键只使用 `name`、`type`、`data_status`、`source_updated_at`、`url`、`knowledge_version` 等来源事实字段，忽略每次读取可能不同的 `retrieved_at`，并保留首次出现的完整 `Source`。
 - `warnings` 为四个专业结果按 weather、route、lodging、food 顺序聚合的结果；来源或警告漏项、额外值或顺序错误时必须拒绝。
-- `degraded_agents` 只包括状态为 `degraded` 的 Agent 名称。
+- `degraded_agents` 只包括状态为 `degraded` 的 Agent 名称；仅有 `partial` 时可以为空。
+- 顶层 `success` 不得包含 `partial`、`degraded` 或 `failed`；顶层 `degraded` 至少包含 `partial` 或 `degraded` 且不得包含 `failed`；顶层 `failed` 必须包含 `failed`。
 - 整体状态由后续汇总器决定；本合同只限制其为 `success`、`degraded` 或 `failed`。
 
 ---
@@ -368,7 +369,7 @@ order_url
 | 测试类别 | 验证意图 |
 |---|---|
 | 请求默认与边界 | 保证默认 3 天 2 晚，并阻止空地点、过去日期、越界人数、越界天数、无效偏好和未知请求字段进入后续链路。 |
-| 来源时间语义 | 保证来源总有读取时间；实时与缓存来源有上游更新时间；知识库来源有版本。 |
+| 来源时间语义 | 保证来源总有读取时间；上游真实提供更新时间时保留，否则为 null；知识库来源有版本。 |
 | 领域模型 | 保证天气、路线、住宿、餐饮和 POI 能按预期序列化，并限制必要的数值与日序边界。 |
 | 禁止字段 | 保证价格、库存、可订、排队、优惠与评分等字段被拒绝，而不是静默保留。 |
 | Agent 状态 | 保证 `success`、`partial`、`degraded`、`failed` 的 data、缺失字段和错误摘要保持一致。 |

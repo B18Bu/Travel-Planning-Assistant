@@ -220,13 +220,28 @@ async def test_invalid_weather_structure_is_controlled(payload):
     assert all(value not in str(exc_info.value) for value in ("secret-location", BASE, "坏"))
 
 
-@pytest.mark.parametrize("bad_url", ["http://evil.test", "https://evil.test"])
-def test_rejects_untrusted_weather_base_url(bad_url):
+@pytest.mark.parametrize("bad_url", [
+    "http://evil.test",
+    "https://evil.test",
+    "https://devapi.qweather.com/",
+    "https://devapi.qweather.com/path",
+    "https://devapi.qweather.com?x=1",
+    "https://devapi.qweather.com#frag",
+    "https://user@devapi.qweather.com",
+    "https://devapi.qweather.com:443",
+    "https://DEVAPI.QWEATHER.COM",
+])
+def test_rejects_noncanonical_weather_base_url(bad_url):
     with pytest.raises(ExternalServiceUnavailable, match="和风天气服务地址不受支持"):
         client(base_url=bad_url)
 
 
-@pytest.mark.parametrize("attempts", [0, 4, 99])
+@pytest.mark.parametrize("attempts", [1, 2, 3])
+def test_accepts_weather_attempt_count_bounds(attempts):
+    assert client(max_attempts=attempts).max_attempts == attempts
+
+
+@pytest.mark.parametrize("attempts", [0, 4, True, False])
 def test_rejects_weather_attempt_count_out_of_range(attempts):
     with pytest.raises(ValueError):
         client(max_attempts=attempts)
@@ -269,6 +284,24 @@ async def test_weather_matching_days_are_returned_in_date_order():
     assert [item["date"] for item in result["daily"]] == [date(2026, 9, 1), date(2026, 9, 2), date(2026, 9, 3)]
 
 
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_days_three_and_nine_share_effective_cache_key():
+    route = respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": [
+            {"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "20", "tempMax": "28"},
+            {"fxDate": "2026-09-02", "textDay": "晴", "tempMin": "20", "tempMax": "28"},
+            {"fxDate": "2026-09-03", "textDay": "晴", "tempMin": "20", "tempMax": "28"},
+        ],
+    }))
+    weather_client = client()
+    first = await weather_client.daily_forecast("city", date(2026, 9, 1), 3)
+    second = await weather_client.daily_forecast("city", date(2026, 9, 1), 9)
+    assert route.call_count == 1
+    assert first["daily"] == second["daily"]
+    assert second["data_status"] == "cached"
+
+
 @pytest.mark.parametrize("payload", [None, [], "bad"])
 @respx.mock
 @pytest.mark.asyncio
@@ -296,6 +329,61 @@ async def test_weather_non_positive_days_are_controlled(days):
         await client().daily_forecast("city", date(2026, 9, 1), days)
 
 
+@pytest.mark.parametrize("bad_start", [None, "2026-09-01", datetime(2026, 9, 1)])
+@pytest.mark.asyncio
+async def test_weather_start_must_be_exact_date(bad_start):
+    with pytest.raises(ExternalServiceUnavailable, match="和风天气请求日期无效"):
+        await client().daily_forecast("city", bad_start, 1)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_cache_key_isolated_by_api_key():
+    route = respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": [{"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "20", "tempMax": "28"}],
+    }))
+    cache = MemoryCache()
+    await client(cache=cache, api_key="key-one").daily_forecast("city", date(2026, 9, 1), 1)
+    await client(cache=cache, api_key="key-two").daily_forecast("city", date(2026, 9, 1), 1)
+    assert route.call_count == 2
+    assert len(cache._entries) == 2
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_valid_key_preheat_does_not_allow_empty_key_cache_hit():
+    route = respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": [{"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "20", "tempMax": "28"}],
+    }))
+    cache = MemoryCache()
+    await client(cache=cache, api_key="key-one").daily_forecast("city", date(2026, 9, 1), 1)
+    with pytest.raises(ExternalServiceUnavailable, match="API 密钥"):
+        await client(cache=cache, api_key="").daily_forecast("city", date(2026, 9, 1), 1)
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_effective_cache_key_avoids_days_alias():
+    route = respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": [{"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "20", "tempMax": "28"}],
+    }))
+    cache = MemoryCache()
+    await client(cache=cache).daily_forecast("city", date(2026, 9, 1), 3)
+    await client(cache=cache).daily_forecast("city", date(2026, 9, 1), 9)
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_weather_structured_cache_key_avoids_colon_collision():
+    cache = MemoryCache()
+    weather_client = client(cache=cache)
+    key_one = weather_client._cache_key("a", date(2026, 9, 1), 1)
+    key_two = weather_client._cache_key("a:2026-09-01", date(2026, 9, 1), 1)
+    assert key_one != key_two
+    assert "weather-key" not in key_one
+
+
 @respx.mock
 @pytest.mark.asyncio
 async def test_weather_success_clears_prior_breaker_failure():
@@ -312,3 +400,47 @@ async def test_weather_success_clears_prior_breaker_failure():
 
     assert breaker.failure_count == 0
     breaker.ensure_available()
+
+
+@pytest.mark.parametrize("condition", ["", [], {}, True, 1])
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_condition_must_be_non_empty_string(condition):
+    respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": [
+            {"fxDate": "2026-09-01", "textDay": condition, "tempMin": "20", "tempMax": "28"},
+        ],
+    }))
+    weather_client = client()
+    with pytest.raises(ExternalServiceUnavailable, match="和风天气未返回有效数据"):
+        await weather_client.daily_forecast("city", date(2026, 9, 1), 1)
+    assert weather_client.breaker.failure_count == 1
+
+
+@pytest.mark.parametrize("field", ["tempMin", "tempMax"])
+@pytest.mark.parametrize("value", [True, False, [], {}, "", "1.2", "坏"])
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_temperature_rejects_non_integer_values(field, value):
+    item = {"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "20", "tempMax": "28"}
+    item[field] = value
+    respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": [item],
+    }))
+    weather_client = client()
+    with pytest.raises(ExternalServiceUnavailable, match="和风天气未返回有效数据"):
+        await weather_client.daily_forecast("city", date(2026, 9, 1), 1)
+    assert weather_client.breaker.failure_count == 1
+
+
+@pytest.mark.parametrize("value", [None, 20, "20", -3, "-3"])
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_temperature_accepts_none_or_integer_values(value):
+    respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": [{
+            "fxDate": "2026-09-01", "textDay": "晴", "tempMin": value, "tempMax": value,
+        }],
+    }))
+    result = await client().daily_forecast("city", date(2026, 9, 1), 1)
+    assert result["daily"][0]["temp_min"] == value if isinstance(value, int) or value is None else int(value)

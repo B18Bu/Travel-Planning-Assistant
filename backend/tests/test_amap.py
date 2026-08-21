@@ -67,13 +67,48 @@ async def test_poi_cache_hit_has_ttl_metadata_and_no_raw_payload():
     assert second[0]["retrieved_at"] >= first[0]["retrieved_at"]
     cached_value = next(iter(cache._entries.values()))[0]
     assert set(cached_value) == {"data", "data_status", "source_updated_at", "retrieved_at"}
-    assert set(cached_value["data"]) == {"pois"}
-    assert set(cached_value["data"]["pois"][0]) == {"name", "address", "location", "category"}
-    assert "status" not in cached_value["data"]
-    assert "info" not in cached_value["data"]
-    assert "photos" not in cached_value["data"]["pois"][0]
+    assert isinstance(cached_value["data"], list)
+    assert set(cached_value["data"][0]) == {"name", "address", "location", "category"}
+    assert "status" not in cached_value
+    assert "info" not in cached_value
+    assert "photos" not in cached_value["data"][0]
     assert "amap-key" not in repr(cached_value)
     assert "private" not in repr(cached_value)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_amap_source_updated_at_uses_valid_supplier_time_and_none_when_invalid():
+    route = respx.get(f"{BASE}/v3/geocode/geo").mock(side_effect=[
+        httpx.Response(200, json={"status": "1", "updateTime": "2026-08-20T10:00:00+08:00", "geocodes": [{"formatted_address": "成都", "location": "1,2", "adcode": "3"}]}),
+        httpx.Response(200, json={"status": "1", "update_time": "bad", "geocodes": [{"formatted_address": "成都", "location": "1,2", "adcode": "3"}]}),
+    ])
+    cache = MemoryCache()
+    first = await client(cache=cache).geocode("成都")
+    second = await client(cache=MemoryCache()).geocode("成都")
+    assert route.call_count == 2
+    assert first["source_updated_at"].tzinfo is not None
+    assert second["source_updated_at"] is None
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_amap_401_json_is_controlled_and_records_failure():
+    respx.get(f"{BASE}/v3/geocode/geo").mock(return_value=httpx.Response(401, json={"status": "1", "geocodes": [{"formatted_address": "成都", "location": "1,2", "adcode": "3"}]}))
+    amap = client()
+    with pytest.raises(ExternalServiceUnavailable, match="未返回有效数据"):
+        await amap.geocode("成都")
+    assert amap.breaker.failure_count == 1
+
+
+@pytest.mark.asyncio
+async def test_amap_structured_cache_keys_avoid_collision_and_cross_key_reuse():
+    cache = MemoryCache()
+    first = client(cache=cache, api_key="key-one")
+    second = client(cache=cache, api_key="key-two")
+    assert first._cache_key("route", ["a", "b:c"]) != first._cache_key("route", ["a:b", "c"])
+    assert first._cache_key("route", ["a", "b"]) != second._cache_key("route", ["a", "b"])
+    assert "key-one" not in first._cache_key("route", ["a", "b"])
 
 
 @respx.mock
@@ -84,6 +119,20 @@ async def test_geocode_cache_hit_is_cached():
     first = await amap.geocode("成都")
     second = await amap.geocode("成都")
     assert route.call_count == 1 and first["data_status"] == "realtime" and second["data_status"] == "cached"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,args", [
+    ("geocode", (None,)), ("geocode", ([],)), ("geocode", ({},)), ("geocode", (True,)), ("geocode", ("",)),
+    ("driving_route", (None, "b")), ("driving_route", ("a", None)), ("driving_route", ("a", [])),
+    ("search_poi", (None, "成都")), ("search_poi", ("餐饮", None)), ("search_poi", ("", "成都")),
+])
+@pytest.mark.asyncio
+async def test_amap_runtime_arguments_are_non_empty_text(method, args):
+    cache = MemoryCache()
+    with pytest.raises(ExternalServiceUnavailable):
+        await getattr(client(cache=cache), method)(*args)
+    assert cache._entries == {}
 
 
 @pytest.mark.asyncio
@@ -157,14 +206,29 @@ async def test_status_empty_results_and_empty_poi_are_controlled_or_valid():
     assert await client().search_poi("住宿", "成都") == []
 
 
-@pytest.mark.parametrize("bad_url", ["http://evil.test", "https://evil.test"])
-def test_rejects_untrusted_base_url(bad_url):
+@pytest.mark.parametrize("bad_url", [
+    "http://evil.test",
+    "https://evil.test",
+    "https://restapi.amap.com/",
+    "https://restapi.amap.com/path",
+    "https://restapi.amap.com?x=1",
+    "https://restapi.amap.com#frag",
+    "https://user@restapi.amap.com",
+    "https://restapi.amap.com:443",
+    "https://RESTAPI.AMAP.COM",
+])
+def test_rejects_noncanonical_amap_base_url(bad_url):
     with pytest.raises(ExternalServiceUnavailable, match="服务地址不受支持"):
         client(base_url=bad_url)
 
 
-@pytest.mark.parametrize("attempts", [0, 4, 99])
-def test_rejects_attempt_count_out_of_range(attempts):
+@pytest.mark.parametrize("attempts", [1, 2, 3])
+def test_accepts_amap_attempt_count_bounds(attempts):
+    assert client(max_attempts=attempts).max_attempts == attempts
+
+
+@pytest.mark.parametrize("attempts", [0, 4, True, False])
+def test_rejects_amap_attempt_count_out_of_range(attempts):
     with pytest.raises(ValueError): client(max_attempts=attempts)
 
 
@@ -207,3 +271,45 @@ async def test_route_path_and_number_types_are_controlled():
 async def test_poi_item_non_dict_is_controlled(pois):
     respx.get(f"{BASE}/v5/place/text").mock(return_value=httpx.Response(200, json={"status": "1", "pois": pois}))
     with pytest.raises(ExternalServiceUnavailable, match="有效 POI"): await client().search_poi("餐饮", "成都")
+
+
+@pytest.mark.parametrize("field", ["name", "address", "location", "type"])
+@pytest.mark.parametrize("value", [[], {}, True, ""])
+@respx.mock
+@pytest.mark.asyncio
+async def test_amap_poi_fields_must_be_string_or_none(field, value):
+    poi = {"name": "餐厅", "address": "道路", "location": "1,2", "type": "餐饮"}
+    poi[field] = value
+    respx.get(f"{BASE}/v5/place/text").mock(return_value=httpx.Response(200, json={"status": "1", "pois": [poi]}))
+    amap = client()
+    with pytest.raises(ExternalServiceUnavailable, match="有效 POI"):
+        await amap.search_poi("餐饮", "成都")
+    assert amap.breaker.failure_count == 1
+
+
+@pytest.mark.parametrize("field", ["formatted_address", "location", "adcode"])
+@pytest.mark.parametrize("value", [[], {}, True, ""])
+@respx.mock
+@pytest.mark.asyncio
+async def test_amap_geocode_fields_must_be_string_or_none(field, value):
+    item = {"formatted_address": "成都", "location": "1,2", "adcode": "3"}
+    item[field] = value
+    respx.get(f"{BASE}/v3/geocode/geo").mock(return_value=httpx.Response(200, json={"status": "1", "geocodes": [item]}))
+    amap = client()
+    with pytest.raises(ExternalServiceUnavailable, match="找到地点"):
+        await amap.geocode("成都")
+    assert amap.breaker.failure_count == 1
+
+
+@pytest.mark.parametrize("field", ["distance", "duration"])
+@pytest.mark.parametrize("value", [True, False, [], {}, "", "坏"])
+@respx.mock
+@pytest.mark.asyncio
+async def test_amap_route_numbers_must_be_strict_integer(field, value):
+    path = {"distance": "100", "duration": "60"}
+    path[field] = value
+    respx.get(f"{BASE}/v5/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [path]}}))
+    amap = client()
+    with pytest.raises(ExternalServiceUnavailable, match="有效路线"):
+        await amap.driving_route("a", "b")
+    assert amap.breaker.failure_count == 1

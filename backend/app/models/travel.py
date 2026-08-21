@@ -94,9 +94,6 @@ class Source(StrictModel):
     def validate_contract(self) -> "Source":
         """校验来源状态、时间和知识库版本之间的约束。"""
 
-        if self.data_status in {DataStatus.realtime, DataStatus.cached}:
-            if self.source_updated_at is None:
-                raise ValueError("实时或缓存来源必须提供上游更新时间")
         if self.type is SourceType.knowledge_base:
             if self.data_status is not DataStatus.knowledge_base:
                 raise ValueError("知识库来源的数据状态必须为 knowledge_base")
@@ -355,11 +352,11 @@ class TravelPlanDocument(StrictModel):
 
         statuses = {result.status for result in results.values()}
         if self.status is AgentStatus.success:
-            if AgentStatus.degraded in statuses or AgentStatus.failed in statuses:
-                raise ValueError("success 文档不得包含 degraded 或 failed 专业结果")
+            if statuses & {AgentStatus.partial, AgentStatus.degraded, AgentStatus.failed}:
+                raise ValueError("success 文档不得包含 partial、degraded 或 failed 专业结果")
         elif self.status is AgentStatus.degraded:
-            if AgentStatus.degraded not in statuses or AgentStatus.failed in statuses:
-                raise ValueError("degraded 文档必须包含 degraded 且不得包含 failed 专业结果")
+            if not ({AgentStatus.partial, AgentStatus.degraded} & statuses) or AgentStatus.failed in statuses:
+                raise ValueError("degraded 文档必须包含 partial 或 degraded 且不得包含 failed 专业结果")
         elif AgentStatus.failed not in statuses:
             raise ValueError("failed 文档必须包含 failed 专业结果")
         return self

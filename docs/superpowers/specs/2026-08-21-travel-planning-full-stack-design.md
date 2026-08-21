@@ -115,13 +115,13 @@ FastAPI 应用
 - `driving_route(origin, destination)`：输出非实时估算距离与时长；
 - `search_poi(category, city_or_area)`：输出 POI 名称、地址、坐标与分类。
 
-客户端使用固定 HTTPS 高德域名与固定 API 路径。客户端不接受前端传入 URL，不保留原始响应，不将供应商错误文本传到 Agent 或 API。
+客户端使用固定 HTTPS 高德域名与固定 API 路径。客户端不接受前端传入 URL，不保留原始响应，不将供应商错误文本传到 Agent 或 API。仅接受 2xx 响应进入 JSON 映射；映射字段必须符合受控字符串、整数或 null 合同。
 
-缓存策略：地理编码 7 天、路线 15 分钟、POI 1 小时。
+缓存策略：地理编码 7 天、路线 15 分钟、POI 1 小时。缓存键使用结构化参数和 API key 不可逆指纹隔离，缓存只保存前 10 项受控 POI 映射。
 
 ### 4.2 和风天气客户端
 
-`HeWeatherClient` 仅请求固定的逐日预报端点。天气缓存键由目的地标识、出行日期和天数组成，TTL 为 30 分钟。供应商数据只映射为日期、天气状况、温度上下限和来源更新时间，不保留原始响应。
+`HeWeatherClient` 仅请求固定的逐日预报端点。天气请求天数为正整数，客户端使用 `effective_days=min(days,3)`，从出行日期起按日期排序返回最多 `effective_days` 条；天气缓存键包含结构化参数和 API key 不可逆指纹，TTL 为 30 分钟。供应商数据只映射为日期、天气状况、温度上下限和真实来源更新时间，不保留原始响应。未来天气 Agent 对 `days>3` 返回 `partial` 并填写 `missing_fields`，最终文档进入 `degraded`，不伪造完整 14 天预报。
 
 ### 4.3 缓存、重试与熔断
 
@@ -181,7 +181,7 @@ POI 无结果、密钥缺失或调用失败时，返回 `degraded` 的 `FoodPlan
 
 - `sources`：按 weather、route、lodging、food 顺序，以 `name`、`type`、`data_status`、`source_updated_at`、`url`、`knowledge_version` 去重；忽略 `retrieved_at`，保留首次完整来源；
 - `warnings`：按 weather、route、lodging、food 顺序拼接；
-- `degraded_agents`：只包含 `degraded` 结果；
+- `degraded_agents`：只包含 `degraded` 结果；仅有 `partial` 结果时为空；`success` 不得包含 partial/degraded/failed，`degraded` 至少包含 partial 或 degraded 且不得包含 failed，`failed` 必须包含 failed；
 - Markdown：只根据结构化行程、来源、警告和降级状态生成。
 
 Markdown 固定包含：行程概览、天气与出游风险、每日路线、住宿建议、餐饮建议、待核验事项、来源与更新时间、降级说明。模板不能输出价格、库存、可订状态、评分、队列、优惠、密钥、原始异常或内部 URL。
