@@ -42,13 +42,37 @@ def test_frontend_has_intro_and_real_workspace_views():
     assert 'id="travel-form"' in html
 
 
+def test_frontend_matches_prototype_views_and_removes_quick_regions():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    for marker in (
+        'class="intro-inner"',
+        'class="topbar"',
+        'class="shell"',
+        'id="history-panel"',
+        'id="view-home"',
+        'id="view-task"',
+        'id="view-dashboard"',
+        'id="settings-mask"',
+        'id="confirm-mask"',
+        'class="travel-window"',
+        'id="home-origin"',
+        'id="home-dest"',
+    ):
+        assert marker in html
+    assert "quick-row" not in html
+    assert "region-chip" not in html
+    assert "quickRegion" not in script
+    for animation in ("viewIn", "waveBeat", "pulse", "growBar", "fadeRow", "introRise", "introFeatureIn", "routeIn", "nodeBreath", "fadeUp"):
+        assert f"@keyframes {animation}" in styles
+
+
 def test_frontend_marks_unavailable_prototype_capabilities_as_non_interactive():
     html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
 
-    assert "当前 MVP 未启用" in html
-    assert "知识库检索" in html
-    assert "数据看板" in html
-    assert "数字人讲解" in html
+    assert "数字人讲解占位" in html
     assert "/api/knowledge" not in html
     assert "/api/dashboard" not in html
 
@@ -59,7 +83,7 @@ def test_frontend_switches_intro_and_resets_real_plan_without_network_side_effec
     assert "startExperience" in script
     assert "startNewPlan" in script
     assert "workspace.hidden" in script
-    assert "intro.hidden" in script
+    assert 'intro.classList.add("hidden")' in script
     assert "form.reset" in script
 
 
@@ -99,9 +123,9 @@ def test_frontend_preserves_safe_rendering_inside_workbench():
 
     assert "startExperienceButton.addEventListener" in script
     assert "newPlanButton.addEventListener" in script
-    assert "result.hidden = true" in script
+    assert "result = taskView" in script
     assert "DOMPurify.sanitize" in script
-    assert "markdown.innerHTML = clean" in script
+    assert "body.innerHTML = safeMarkdown" in script
     assert "JSON.stringify(documentData)" not in script
     assert 'fetch("/api/knowledge"' not in script
     assert 'fetch("/api/dashboard"' not in script
