@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date, datetime, timezone
 from hashlib import sha256
 import json
@@ -16,11 +17,13 @@ class HeWeatherClient:
 
     _base_url = "https://devapi.qweather.com"
 
-    def __init__(self, api_key: str, base_url: str = _base_url, cache: MemoryCache | None = None, breaker: CircuitBreaker | None = None, max_attempts: int = 3, cache_ttl_seconds: float = 1800, timeout: httpx.Timeout | float = 10.0) -> None:
+    def __init__(self, api_key: str, base_url: str = _base_url, cache: MemoryCache | None = None, breaker: CircuitBreaker | None = None, max_attempts: int = 3, cache_ttl_seconds: int = 1800, timeout: httpx.Timeout | float = 10.0) -> None:
         if base_url != self._base_url:
             raise ExternalServiceUnavailable("和风天气服务地址不受支持")
         if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 3:
             raise ValueError("max_attempts 必须在 1 到 3 之间")
+        if not isinstance(cache_ttl_seconds, int) or isinstance(cache_ttl_seconds, bool) or cache_ttl_seconds <= 0:
+            raise ValueError("cache_ttl_seconds 必须为正整数")
         self.api_key = api_key
         self.cache = cache or MemoryCache()
         self.breaker = breaker or CircuitBreaker(3, 60)
@@ -40,8 +43,13 @@ class HeWeatherClient:
         cache_key = self._cache_key(location_id, start, effective_days)
         cached = self.cache.get(cache_key)
         if cached is not None:
-            return {**cached, "data_status": "cached", "retrieved_at": datetime.now(timezone.utc)}
-        self.breaker.ensure_available()
+            self.breaker.record_cache_hit()
+            return {
+                **deepcopy(cached),
+                "data_status": "cached",
+                "retrieved_at": datetime.now(timezone.utc),
+            }
+        token = self.breaker.ensure_available()
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await request_with_retry(lambda: client.get(f"{self._base_url}/v7/weather/3d", params={"location": location_id, "key": self.api_key}), max_attempts=self.max_attempts)
@@ -50,14 +58,18 @@ class HeWeatherClient:
                 payload = response.json()
             normalized = self._normalize(payload, start, effective_days)
         except ExternalServiceUnavailable:
-            self.breaker.record_failure()
+            self.breaker.record_failure(token)
             raise
         except (ValueError, TypeError, KeyError, AttributeError):
-            self.breaker.record_failure()
+            self.breaker.record_failure(token)
             raise ExternalServiceUnavailable("和风天气未返回有效数据") from None
-        self.cache.set(cache_key, normalized, ttl_seconds=self.cache_ttl_seconds)
-        self.breaker.record_success()
-        return {**normalized, "data_status": "realtime", "retrieved_at": datetime.now(timezone.utc)}
+        self.cache.set(cache_key, deepcopy(normalized), ttl_seconds=self.cache_ttl_seconds)
+        self.breaker.record_success(token)
+        return {
+            **deepcopy(normalized),
+            "data_status": "realtime",
+            "retrieved_at": datetime.now(timezone.utc),
+        }
 
     def _require_key(self) -> None:
         if not isinstance(self.api_key, str) or not self.api_key.strip():
@@ -75,7 +87,7 @@ class HeWeatherClient:
     def _normalize(payload: object, start: date, days: int) -> dict[str, Any]:
         if not isinstance(payload, dict) or payload.get("code") != "200":
             raise ExternalServiceUnavailable("和风天气未返回有效数据")
-        source_updated_at = _aware_datetime(payload.get("updateTime"))
+        source_updated_at = _optional_aware_datetime(payload.get("updateTime"))
         raw_daily = payload.get("daily")
         if not isinstance(raw_daily, list):
             raise ValueError("天气 daily 结构错误")
@@ -97,10 +109,13 @@ class HeWeatherClient:
         return {"source_updated_at": source_updated_at, "daily": tuple(daily)}
 
 
-def _aware_datetime(value: object) -> datetime:
+def _optional_aware_datetime(value: object) -> datetime | None:
     if not isinstance(value, str):
-        raise ValueError("更新时间缺失")
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
 
 

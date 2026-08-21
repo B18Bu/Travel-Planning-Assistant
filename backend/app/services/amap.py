@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -16,11 +17,14 @@ class AmapClient:
 
     _base_url = "https://restapi.amap.com"
 
-    def __init__(self, api_key: str, base_url: str = _base_url, cache: MemoryCache | None = None, breaker: CircuitBreaker | None = None, max_attempts: int = 3, geocode_cache_ttl_seconds: float = 604800, route_cache_ttl_seconds: float = 900, poi_cache_ttl_seconds: float = 3600, timeout: httpx.Timeout | float = 10.0) -> None:
+    def __init__(self, api_key: str, base_url: str = _base_url, cache: MemoryCache | None = None, breaker: CircuitBreaker | None = None, max_attempts: int = 3, geocode_cache_ttl_seconds: int = 604800, route_cache_ttl_seconds: int = 900, poi_cache_ttl_seconds: int = 3600, timeout: httpx.Timeout | float = 10.0) -> None:
         if base_url != self._base_url:
             raise ExternalServiceUnavailable("高德地图服务地址不受支持")
         if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 3:
             raise ValueError("max_attempts 必须在 1 到 3 之间")
+        for ttl in (geocode_cache_ttl_seconds, route_cache_ttl_seconds, poi_cache_ttl_seconds):
+            if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl <= 0:
+                raise ValueError("缓存 TTL 必须为正整数")
         self.api_key = api_key
         self.cache = cache or MemoryCache()
         self.breaker = breaker or CircuitBreaker(3, 60)
@@ -36,7 +40,7 @@ class AmapClient:
         item = result["data"]
         if not isinstance(item, dict) or not _non_empty_text(item.get("name")) or not _optional_text(item.get("location")) or not _optional_text(item.get("adcode")):
             raise ExternalServiceUnavailable("高德地图未找到地点")
-        return {**item, **self._metadata(result)}
+        return {**deepcopy(item), **self._metadata(result)}
 
     async def driving_route(self, origin: str, destination: str) -> dict[str, Any]:
         self._require_text(origin, "高德地图请求起点无效")
@@ -45,27 +49,28 @@ class AmapClient:
         item = result["data"]
         if not isinstance(item, dict) or not _non_negative_int(item.get("distance_meters")) or not _non_negative_int(item.get("duration_minutes")):
             raise ExternalServiceUnavailable("高德地图未返回有效路线")
-        return {**item, **self._metadata(result)}
+        return {**deepcopy(item), **self._metadata(result)}
 
     async def search_poi(self, keywords: str, city: str) -> list[dict[str, Any]]:
         self._require_text(keywords, "高德地图请求关键词无效")
         self._require_text(city, "高德地图请求城市无效")
-        result = await self._get("poi", [keywords, city], "/v5/place/text", {"keywords": keywords, "city": city, "citylimit": "true"}, self.poi_cache_ttl_seconds)
+        result = await self._get("poi", [keywords, city], "/v5/place/text", {"keywords": keywords, "region": city, "city_limit": "true"}, self.poi_cache_ttl_seconds)
         pois = result["data"]
         if not isinstance(pois, list):
             raise ExternalServiceUnavailable("高德地图未返回有效 POI")
         for item in pois:
             if not isinstance(item, dict) or not _non_empty_text(item.get("name")) or not _non_empty_text(item.get("category")) or not _optional_text(item.get("address")) or not _optional_text(item.get("location")):
                 raise ExternalServiceUnavailable("高德地图未返回有效 POI")
-        return [{**item, **self._metadata(result)} for item in pois]
+        return [{**deepcopy(item), **self._metadata(result)} for item in pois]
 
     async def _get(self, operation: str, args: list[str], path: str, params: dict[str, str], ttl_seconds: float) -> dict[str, Any]:
         self._require_key()
         cache_key = self._cache_key(operation, args)
         cached = self.cache.get(cache_key)
         if cached is not None:
-            return {**cached, "data_status": "cached", "retrieved_at": datetime.now(timezone.utc)}
-        self.breaker.ensure_available()
+            self.breaker.record_cache_hit()
+            return {**deepcopy(cached), "data_status": "cached", "retrieved_at": datetime.now(timezone.utc)}
+        token = self.breaker.ensure_available()
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await request_with_retry(lambda: client.get(f"{self._base_url}{path}", params={**params, "key": self.api_key}), max_attempts=self.max_attempts)
@@ -76,14 +81,14 @@ class AmapClient:
                 raise ExternalServiceUnavailable("高德地图未返回有效数据")
             mapped = self._project(path, payload)
         except ExternalServiceUnavailable:
-            self.breaker.record_failure()
+            self.breaker.record_failure(token)
             raise
         except (ValueError, TypeError, KeyError, AttributeError):
-            self.breaker.record_failure()
+            self.breaker.record_failure(token)
             raise ExternalServiceUnavailable("高德地图未返回有效数据") from None
-        self.cache.set(cache_key, {"data": mapped, "data_status": "realtime", "source_updated_at": _source_updated_at(payload), "retrieved_at": datetime.now(timezone.utc)}, ttl_seconds=ttl_seconds)
-        self.breaker.record_success()
-        return self.cache.get(cache_key)
+        self.cache.set(cache_key, {"data": deepcopy(mapped), "data_status": "realtime", "source_updated_at": _source_updated_at(payload), "retrieved_at": datetime.now(timezone.utc)}, ttl_seconds=ttl_seconds)
+        self.breaker.record_success(token)
+        return deepcopy(self.cache.get(cache_key))
 
     def _cache_key(self, operation: str, args: list[str]) -> str:
         fingerprint = sha256(self.api_key.encode("utf-8")).hexdigest()[:16]
@@ -109,6 +114,8 @@ class AmapClient:
             if not _strict_int_string(path_item.get("distance")) or not _strict_int_string(path_item.get("duration")) or int(path_item["distance"]) < 0 or int(path_item["duration"]) < 0:
                 raise ExternalServiceUnavailable("高德地图未返回有效路线")
             return {"distance_meters": int(path_item["distance"]), "duration_minutes": round(int(path_item["duration"]) / 60)}
+        if path != "/v5/place/text":
+            raise ExternalServiceUnavailable("高德地图未返回有效数据")
         pois = payload.get("pois", [])
         if not isinstance(pois, list):
             raise ExternalServiceUnavailable("高德地图未返回有效 POI")

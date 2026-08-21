@@ -15,20 +15,31 @@ class ExternalServiceUnavailable(Exception):
 class CircuitBreaker:
     """按连续失败次数控制外部服务熔断。"""
 
-    def __init__(self, failure_threshold: int, open_seconds: float) -> None:
+    def __init__(self, failure_threshold: int, open_seconds: int) -> None:
+        if not isinstance(failure_threshold, int) or isinstance(failure_threshold, bool) or failure_threshold <= 0:
+            raise ValueError("failure_threshold 必须为正整数")
+        if not isinstance(open_seconds, int) or isinstance(open_seconds, bool) or open_seconds <= 0:
+            raise ValueError("open_seconds 必须为正整数")
         self.failure_threshold = failure_threshold
         self.open_seconds = open_seconds
         self.failure_count = 0
         self._opened_at: datetime | None = None
+        self._generation = 0
 
-    def record_failure(self) -> None:
-        self.failure_count += 1
-        if self.failure_count >= self.failure_threshold:
-            self._opened_at = datetime.now(timezone.utc)
-
-    def ensure_available(self) -> None:
-        if self._opened_at is None:
+    def record_failure(self, token: int | None = None) -> None:
+        if token is not None and token != self._generation:
             return
+        self.failure_count += 1
+        if self.failure_count >= self.failure_threshold and self._opened_at is None:
+            self._opened_at = datetime.now(timezone.utc)
+            self._generation += 1
+
+    def record_cache_hit(self) -> None:
+        self.failure_count = 0
+
+    def ensure_available(self) -> int:
+        if self._opened_at is None:
+            return self._generation
 
         opened_at = self._opened_at
         if datetime.now(timezone.utc) - opened_at >= timedelta(
@@ -36,12 +47,16 @@ class CircuitBreaker:
         ):
             self.failure_count = 0
             self._opened_at = None
-            return
+            self._generation += 1
+            return self._generation
         raise ExternalServiceUnavailable("外部服务熔断中")
 
-    def record_success(self) -> None:
+    def record_success(self, token: int | None = None) -> None:
+        if token is not None and token != self._generation:
+            return
         self.failure_count = 0
         self._opened_at = None
+        self._generation += 1
 
 
 ResponseT = TypeVar("ResponseT")
@@ -53,6 +68,8 @@ async def request_with_retry(
 ) -> ResponseT:
     """执行请求，仅对受控瞬时错误重试。"""
 
+    if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 3:
+        raise ValueError("max_attempts 必须在 1 到 3 之间")
     for attempt in range(max_attempts):
         try:
             response = await send()

@@ -115,6 +115,26 @@ async def test_request_with_retry_returns_600_without_retry():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("max_attempts", [0, -1, 4, True, False])
+@pytest.mark.asyncio
+async def test_request_with_retry_rejects_invalid_attempt_count(max_attempts):
+    async def send():
+        return httpx.Response(200)
+
+    with pytest.raises(ValueError):
+        await request_with_retry(send, max_attempts=max_attempts)
+
+
+@pytest.mark.parametrize("max_attempts", [1, 2, 3])
+@pytest.mark.asyncio
+async def test_request_with_retry_accepts_valid_attempt_count(max_attempts):
+    async def send():
+        return httpx.Response(200)
+
+    assert (await request_with_retry(send, max_attempts=max_attempts)).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_request_with_retry_raises_controlled_error_after_exhaustion(monkeypatch):
     async def send():
         raise httpx.TimeoutException("https://secret.example/path")
@@ -130,6 +150,19 @@ async def test_request_with_retry_raises_controlled_error_after_exhaustion(monke
     assert str(exc_info.value) == "外部服务暂不可用"
     assert "secret.example" not in str(exc_info.value)
     assert exc_info.value.__cause__ is None
+
+
+@pytest.mark.parametrize("failure_threshold", [0, -1, True, False])
+@pytest.mark.parametrize("open_seconds", [0, -1, True, False])
+def test_circuit_breaker_rejects_non_positive_integer_configuration(failure_threshold, open_seconds):
+    with pytest.raises(ValueError):
+        CircuitBreaker(failure_threshold=failure_threshold, open_seconds=open_seconds)
+
+
+@pytest.mark.parametrize("failure_threshold, open_seconds", [(0, 60), (-1, 60), (2, 0), (2, -1), (2, True)])
+def test_circuit_breaker_rejects_each_invalid_duration_or_threshold(failure_threshold, open_seconds):
+    with pytest.raises(ValueError):
+        CircuitBreaker(failure_threshold=failure_threshold, open_seconds=open_seconds)
 
 
 def test_circuit_breaker_opens_at_failure_threshold():
@@ -156,6 +189,31 @@ def test_circuit_breaker_resets_after_open_period():
     breaker.record_failure()
     with pytest.raises(ExternalServiceUnavailable, match="外部服务熔断中"):
         breaker.ensure_available()
+
+
+def test_circuit_breaker_generation_prevents_stale_success_from_clearing_new_failure():
+    breaker = CircuitBreaker(failure_threshold=2, open_seconds=60)
+    request_a = breaker.ensure_available()
+    request_b = breaker.ensure_available()
+
+    breaker.record_failure(request_b)
+    breaker.record_failure(request_b)
+    with pytest.raises(ExternalServiceUnavailable, match="外部服务熔断中"):
+        breaker.ensure_available()
+
+    breaker.record_success(request_a)
+    with pytest.raises(ExternalServiceUnavailable, match="外部服务熔断中"):
+        breaker.ensure_available()
+
+
+def test_circuit_breaker_cache_hit_resets_stale_failures_without_opening():
+    breaker = CircuitBreaker(failure_threshold=2, open_seconds=60)
+    breaker.record_failure()
+    breaker.record_cache_hit()
+    breaker.record_failure()
+
+    breaker.ensure_available()
+    assert breaker.failure_count == 1
 
 
 def test_circuit_breaker_success_clears_failures_and_open_state():

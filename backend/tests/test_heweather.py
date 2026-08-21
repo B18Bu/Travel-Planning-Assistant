@@ -446,6 +446,46 @@ async def test_weather_temperature_accepts_none_or_integer_values(value):
     assert result["daily"][0]["temp_min"] == value if isinstance(value, int) or value is None else int(value)
 
 
+@pytest.mark.parametrize("update_time", [None, "bad-time"])
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_missing_or_invalid_update_time_keeps_valid_daily_success(update_time):
+    respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200", "updateTime": update_time,
+        "daily": [{"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "20", "tempMax": "28"}],
+    }))
+
+    result = await client().daily_forecast("city", date(2026, 9, 1), 1)
+
+    assert result["source_updated_at"] is None
+    assert result["retrieved_at"].tzinfo == timezone.utc
+
+
+@pytest.mark.parametrize("ttl", [0, -1, True, False])
+def test_weather_rejects_non_positive_cache_ttl(ttl):
+    with pytest.raises(ValueError):
+        client(cache_ttl_seconds=ttl)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_realtime_and_cached_results_do_not_share_daily_items():
+    cache = MemoryCache()
+    respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200", "updateTime": "2026-08-20T10:00:00Z",
+        "daily": [{"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "20", "tempMax": "28"}],
+    }))
+    weather_client = client(cache=cache)
+
+    first = await weather_client.daily_forecast("city", date(2026, 9, 1), 1)
+    first["daily"][0]["condition"] = "被修改"
+    second = await weather_client.daily_forecast("city", date(2026, 9, 1), 1)
+
+    assert second["data_status"] == "cached"
+    assert second["daily"][0]["condition"] == "晴"
+    assert second["daily"][0] is not first["daily"][0]
+
+
 @respx.mock
 @pytest.mark.asyncio
 async def test_weather_cache_contains_only_controlled_projection():

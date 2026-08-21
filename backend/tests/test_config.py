@@ -31,6 +31,40 @@ def test_settings_expose_fixed_service_and_resilience_defaults():
         assert getattr(settings, field) == expected
 
 
+@pytest.mark.parametrize("field", [
+    "weather_cache_ttl_seconds",
+    "amap_geocode_cache_ttl_seconds",
+    "amap_route_cache_ttl_seconds",
+    "amap_poi_cache_ttl_seconds",
+    "circuit_breaker_failure_threshold",
+    "circuit_breaker_open_seconds",
+])
+@pytest.mark.parametrize("value", [0, -1, True, False, "1.2", 1.2, "not-a-number"])
+def test_settings_rejects_non_positive_integer_ttls_and_breaker_values(field, value):
+    with pytest.raises(ValueError):
+        Settings(**{field: value})
+
+
+@pytest.mark.parametrize("value", [0, -1, 4, True, False, "1.2", 1.2, "not-a-number"])
+def test_settings_rejects_invalid_external_max_attempts(value):
+    with pytest.raises(ValueError):
+        Settings(external_max_attempts=value)
+
+
+def test_settings_accepts_dotenv_integer_strings():
+    settings = Settings(
+        external_max_attempts="3",
+        circuit_breaker_failure_threshold="3",
+        circuit_breaker_open_seconds="60",
+        weather_cache_ttl_seconds="1800",
+        amap_geocode_cache_ttl_seconds="604800",
+        amap_route_cache_ttl_seconds="900",
+        amap_poi_cache_ttl_seconds="3600",
+    )
+    assert settings.external_max_attempts == 3
+    assert settings.weather_cache_ttl_seconds == 1800
+
+
 def test_env_example_parses_external_defaults_without_real_keys(monkeypatch):
     env_names = [
         "HEWEATHER_API_KEY",

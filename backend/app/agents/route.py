@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
+
+from pydantic import ValidationError
 
 from app.models.travel import (
     AgentResult,
@@ -26,10 +29,13 @@ class RouteAgent:
         self,
         request: TravelPlanRequest,
         weather_constraints: tuple[str, ...] | list[str],
-        ids: dict[str, str] | str,
+        ids: dict[str, str] | str | None = None,
         trace_id: str | None = None,
+        *,
+        request_id: str | None = None,
     ) -> AgentResult[RoutePlanData]:
-        request_id, trace_id = self._ids(ids, trace_id)
+        request_id, trace_id = self._ids(ids, trace_id, request_id)
+        self._validate_ids(request_id, trace_id)
         constraints = tuple(weather_constraints)
         sources: list[Source] = []
         try:
@@ -65,7 +71,7 @@ class RouteAgent:
                 request_id=request_id,
                 trace_id=trace_id,
             )
-        except ExternalServiceUnavailable:
+        except (ExternalServiceUnavailable, KeyError, TypeError, ValueError, ValidationError):
             data = RoutePlanData(
                 origin=request.origin,
                 destination=request.destination,
@@ -90,25 +96,35 @@ class RouteAgent:
             )
 
     @staticmethod
-    def _ids(ids: dict[str, str] | str, trace_id: str | None) -> tuple[str, str]:
+    def _ids(ids: dict[str, str] | str | None, trace_id: str | None, request_id: str | None = None) -> tuple[str, str]:
+        if request_id is not None:
+            return request_id, trace_id or request_id
         if isinstance(ids, dict):
-            request_id = ids["request_id"]
-            return request_id, ids.get("trace_id", request_id)
-        if trace_id is None:
-            return ids, ids
-        return ids, trace_id
+            if "request_id" not in ids or "trace_id" not in ids:
+                raise ValueError("请求追踪标识无效")
+            return ids["request_id"], ids["trace_id"]
+        if not isinstance(ids, str):
+            raise ValueError("请求追踪标识无效")
+        return ids, trace_id or ids
+
+    @staticmethod
+    def _validate_ids(request_id: str, trace_id: str) -> None:
+        try:
+            request_uuid = UUID(request_id)
+            trace_uuid = UUID(trace_id)
+            if request_uuid.version not in {1, 2, 3, 4, 5} or trace_uuid.version not in {1, 2, 3, 4, 5} or request_uuid != trace_uuid:
+                raise ValueError
+        except (TypeError, ValueError, AttributeError):
+            raise ValueError("请求追踪标识无效") from None
 
     @staticmethod
     def _append_source(sources: list[Source], result: dict[str, Any]) -> None:
-        try:
-            source = Source(
-                name="高德地图",
-                type=SourceType.map_api,
-                data_status=DataStatus(result["data_status"]),
-                source_updated_at=result.get("source_updated_at"),
-                retrieved_at=result["retrieved_at"],
-            )
-        except (KeyError, TypeError, ValueError):
-            return
+        source = Source(
+            name="高德地图",
+            type=SourceType.map_api,
+            data_status=DataStatus(result["data_status"]),
+            source_updated_at=result.get("source_updated_at"),
+            retrieved_at=result["retrieved_at"],
+        )
         if source not in sources:
             sources.append(source)

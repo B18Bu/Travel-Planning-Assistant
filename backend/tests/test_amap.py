@@ -33,8 +33,10 @@ async def test_maps_fixed_endpoints_and_allowed_fields():
     assert route.calls[0].request.url.params["destination"] == "104.08,30.57"
     assert route.calls[0].request.url.params["key"] == "amap-key"
     assert poi.calls[0].request.url.params["keywords"] == "住宿服务"
-    assert poi.calls[0].request.url.params["city"] == "成都"
-    assert poi.calls[0].request.url.params["citylimit"] == "true"
+    assert poi.calls[0].request.url.params["region"] == "成都"
+    assert poi.calls[0].request.url.params["city_limit"] == "true"
+    assert "city" not in poi.calls[0].request.url.params
+    assert "citylimit" not in poi.calls[0].request.url.params
     assert poi.calls[0].request.url.params["key"] == "amap-key"
     assert set(location) == {"name", "location", "adcode", "data_status", "source_updated_at", "retrieved_at"}
     assert set(route_result) == {"distance_meters", "duration_minutes", "data_status", "source_updated_at", "retrieved_at"}
@@ -330,6 +332,49 @@ async def test_poi_more_than_ten_results_returns_only_first_ten():
 
     assert len(result) == 10
     assert [item["name"] for item in result] == [f"餐厅{i}" for i in range(10)]
+
+
+@pytest.mark.parametrize("ttl_name", [
+    "geocode_cache_ttl_seconds", "route_cache_ttl_seconds", "poi_cache_ttl_seconds",
+])
+@pytest.mark.parametrize("ttl", [0, -1, True, False])
+def test_amap_rejects_non_positive_cache_ttl(ttl_name, ttl):
+    with pytest.raises(ValueError):
+        client(**{ttl_name: ttl})
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_amap_cached_poi_does_not_share_nested_items():
+    cache = MemoryCache()
+    respx.get(f"{BASE}/v5/place/text").mock(return_value=httpx.Response(200, json={
+        "status": "1", "pois": [{"name": "餐厅", "address": "道路", "location": "1,2", "type": "餐饮"}],
+    }))
+    amap = client(cache=cache)
+
+    first = await amap.search_poi("餐饮", "成都")
+    first[0]["name"] = "被修改"
+    second = await amap.search_poi("餐饮", "成都")
+
+    assert second[0]["data_status"] == "cached"
+    assert second[0]["name"] == "餐厅"
+    assert second[0] is not first[0]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_amap_unknown_path_is_controlled_and_not_cached():
+    cache = MemoryCache()
+    respx.get(f"{BASE}/v5/unknown").mock(return_value=httpx.Response(200, json={
+        "status": "1", "pois": [{"name": "餐厅", "address": "道路", "location": "1,2", "type": "餐饮"}],
+    }))
+    amap = client(cache=cache)
+
+    with pytest.raises(ExternalServiceUnavailable, match="未返回有效数据"):
+        await amap._get("unknown", ["x"], "/v5/unknown", {}, 60)
+
+    assert cache._entries == {}
+    assert amap.breaker.failure_count == 1
 
 
 @pytest.mark.parametrize("field", ["distance", "duration"])
