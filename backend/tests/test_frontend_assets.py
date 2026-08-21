@@ -32,6 +32,37 @@ async def test_root_serves_same_origin_frontend_page():
     assert 'name="departure_date"' in response.text
 
 
+def test_frontend_has_intro_and_real_workspace_views():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="intro"' in html
+    assert 'id="workspace"' in html
+    assert 'id="start-experience"' in html
+    assert 'id="new-plan"' in html
+    assert 'id="travel-form"' in html
+
+
+def test_frontend_marks_unavailable_prototype_capabilities_as_non_interactive():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+
+    assert "当前 MVP 未启用" in html
+    assert "知识库检索" in html
+    assert "数据看板" in html
+    assert "数字人讲解" in html
+    assert "/api/knowledge" not in html
+    assert "/api/dashboard" not in html
+
+
+def test_frontend_switches_intro_and_resets_real_plan_without_network_side_effects():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "startExperience" in script
+    assert "startNewPlan" in script
+    assert "workspace.hidden" in script
+    assert "intro.hidden" in script
+    assert "form.reset" in script
+
+
 def test_frontend_uses_relative_api_and_local_security_dependencies():
     app_js = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
     index_html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
@@ -41,6 +72,21 @@ def test_frontend_uses_relative_api_and_local_security_dependencies():
     assert "cdn" not in index_html.lower()
     assert "/vendor/marked.min.js" in index_html
     assert "/vendor/purify.min.js" in index_html
+
+
+def test_frontend_preserves_safe_rendering_inside_workbench():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "startExperienceButton.addEventListener" in script
+    assert "newPlanButton.addEventListener" in script
+    assert "result.hidden = true" in script
+    assert "DOMPurify.sanitize" in script
+    assert "markdown.innerHTML = clean" in script
+    assert "JSON.stringify(documentData)" not in script
+    assert 'fetch("/api/knowledge"' not in script
+    assert 'fetch("/api/dashboard"' not in script
+    assert "localStorage" not in script
+    assert "sessionStorage" not in script
 
 
 def test_frontend_makes_api_failures_visible_without_serializing_response_json():

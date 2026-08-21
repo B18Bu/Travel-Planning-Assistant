@@ -7,40 +7,85 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <main class="page-shell">
-    <header class="page-header">
-      <p class="eyebrow">同源旅行规划</p>
-      <h1>智能文旅策划助手</h1>
-      <p>填写基础行程信息，获取结构化、可核验的旅行建议。</p>
-    </header>
-
-    <form id="travel-form" class="travel-form">
-      <div class="form-grid">
-        <label>出发地<input name="origin" required maxlength="100" autocomplete="address-level2"></label>
-        <label>目的地<input name="destination" required maxlength="100" autocomplete="address-level2"></label>
-        <label>出行日期<input name="departure_date" type="date" required></label>
-        <label>出行人数<input name="travelers" type="number" min="1" max="20" value="1" required></label>
-        <label>出行天数<input name="days" type="number" min="1" max="14" value="3"></label>
-        <label>预算（元）<input name="budget" type="number" min="0" max="200000"></label>
-        <label class="wide-field">偏好（用逗号分隔）<input name="preferences" maxlength="600" placeholder="例如：亲子, 美食"></label>
-      </div>
-      <button type="submit">生成旅行规划</button>
-    </form>
-
-    <p id="status" class="status" role="status" aria-live="polite"></p>
-    <p id="error" class="message error" role="alert" hidden></p>
-
-    <section id="result" class="result-layout" hidden aria-label="旅行规划结果">
-      <article class="plan-panel">
-        <h2>行程规划</h2>
-        <div id="markdown" class="markdown-body"></div>
-      </article>
-      <aside class="details-panel">
-        <section><h2>待核验事项</h2><ul id="warnings"></ul></section>
-        <section><h2>来源与更新时间</h2><ul id="sources"></ul></section>
-        <section><h2>降级说明</h2><ul id="degraded"></ul></section>
-      </aside>
+  <main id="intro" class="intro-view">
+    <section class="intro-copy">
+      <p class="intro-product">智能文旅策划助手</p>
+      <h1>把下一段旅程<br>交给智能规划</h1>
+      <p class="intro-lead">以受控天气、路线和 POI 数据生成可核验的旅行建议。</p>
+      <button id="start-experience" class="primary-button" type="button">开始体验</button>
+      <ul class="intro-features">
+        <li>结构化规划与来源追溯</li>
+        <li>天气、路线、住宿与餐饮协同</li>
+        <li>异常时明确降级与核验提示</li>
+      </ul>
     </section>
+    <aside class="intro-visual" aria-label="旅行规划航迹">
+      <svg viewBox="0 0 620 460" role="img" aria-label="从出发地到目的地的旅行航迹">
+        <path class="route route-back" d="M70 330 C170 90 270 390 365 180 S510 90 560 120"></path>
+        <path class="route route-front" d="M70 330 C170 90 270 390 365 180 S510 90 560 120"></path>
+        <circle class="route-node node-start" cx="70" cy="330" r="13"></circle>
+        <circle class="route-node node-mid" cx="365" cy="180" r="10"></circle>
+        <circle class="route-node node-end" cx="560" cy="120" r="16"></circle>
+        <text x="48" y="375">出发</text>
+        <text x="520" y="83">目的地</text>
+      </svg>
+      <p class="visual-caption">从想法到可核验的下一站</p>
+    </aside>
+  </main>
+
+  <main id="workspace" class="workspace" hidden>
+    <header class="topbar">
+      <a class="brand" href="#intro" aria-label="返回智能文旅策划助手首页">
+        <span class="brand-mark" aria-hidden="true">旅</span>
+        <span>智能文旅策划助手</span>
+      </a>
+      <span class="topbar-status">受控规划 · MVP</span>
+    </header>
+    <div class="workbench-shell">
+      <aside class="sidebar" aria-label="工作台导航">
+        <button id="new-plan" class="new-plan-button" type="button">＋ 新建旅行规划</button>
+        <section class="nav-section">
+          <p class="nav-label">当前能力</p>
+          <span class="active-nav-item">旅行规划</span>
+        </section>
+        <section class="mvp-placeholder" aria-label="未启用能力">
+          <p class="nav-label">当前 MVP 未启用</p>
+          <span>知识库检索 · 数据看板 · 数字人讲解 · 设置</span>
+        </section>
+      </aside>
+      <section class="workspace-main" aria-labelledby="workspace-title">
+        <div class="workspace-heading">
+          <p class="section-kicker">旅行规划工作台</p>
+          <h2 id="workspace-title" tabindex="-1">创建一份新的行程</h2>
+          <p>填写基础信息，生成结构化、可追溯的旅行建议。</p>
+        </div>
+        <form id="travel-form" class="travel-form">
+          <div class="form-grid">
+            <label>出发地<input name="origin" required maxlength="100" autocomplete="address-level2"></label>
+            <label>目的地<input name="destination" required maxlength="100" autocomplete="address-level2"></label>
+            <label>出行日期<input name="departure_date" type="date" required></label>
+            <label>出行人数<input name="travelers" type="number" min="1" max="20" value="1" required></label>
+            <label>出行天数<input name="days" type="number" min="1" max="14" value="3"></label>
+            <label>预算（元）<input name="budget" type="number" min="0" max="200000"></label>
+            <label class="wide-field">偏好（用逗号分隔）<input name="preferences" maxlength="600" placeholder="例如：亲子, 美食"></label>
+          </div>
+          <button class="primary-button" type="submit">生成旅行规划</button>
+        </form>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+        <p id="error" class="message error" role="alert" hidden></p>
+        <section id="result" class="result-layout" hidden aria-label="旅行规划结果">
+          <article class="plan-panel">
+            <div class="card-heading"><p class="section-kicker">生成结果</p><h2>行程规划</h2></div>
+            <div id="markdown" class="markdown-body"></div>
+          </article>
+          <aside class="details-panel">
+            <section><h2>待核验事项</h2><ul id="warnings"></ul></section>
+            <section><h2>来源与更新时间</h2><ul id="sources"></ul></section>
+            <section><h2>降级说明</h2><ul id="degraded"></ul></section>
+          </aside>
+        </section>
+      </section>
+    </div>
   </main>
   <script src="/vendor/marked.min.js"></script>
   <script src="/vendor/purify.min.js"></script>

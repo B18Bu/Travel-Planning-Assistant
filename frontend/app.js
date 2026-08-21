@@ -1,4 +1,9 @@
 (() => {
+  const intro = document.querySelector("#intro");
+  const workspace = document.querySelector("#workspace");
+  const startExperienceButton = document.querySelector("#start-experience");
+  const newPlanButton = document.querySelector("#new-plan");
+  const workspaceTitle = document.querySelector("#workspace-title");
   const form = document.querySelector("#travel-form");
   const status = document.querySelector("#status");
   const error = document.querySelector("#error");
@@ -9,12 +14,32 @@
   const degraded = document.querySelector("#degraded");
   const departureInput = form.querySelector("input[name=departure_date]");
   const submit = form.querySelector("button[type=submit]");
+  const originInput = form.querySelector("input[name=origin]");
 
   function todayIso() {
     const today = new Date();
     const month = String(today.getMonth() + 1).padStart(2, "0");
     const day = String(today.getDate()).padStart(2, "0");
     return `${today.getFullYear()}-${month}-${day}`;
+  }
+
+  function focusWorkspaceTitle() {
+    workspaceTitle.focus();
+  }
+
+  function startExperience() {
+    intro.hidden = true;
+    workspace.hidden = false;
+    focusWorkspaceTitle();
+  }
+
+  function startNewPlan() {
+    form.reset();
+    departureInput.min = todayIso();
+    result.hidden = true;
+    error.hidden = true;
+    status.textContent = "";
+    originInput.focus();
   }
 
   departureInput.min = todayIso();
@@ -46,7 +71,7 @@
       const updated = source.source_updated_at ? `（更新时间：${source.source_updated_at}）` : "";
       return `${source.name}${updated}`;
     }), "暂无来源信息");
-    setTextList(degraded, (documentData.degraded_agents || []).map((agent) => `${agent}：结果已降级，请核验"待核验事项"。"`), documentData.status === "failed" ? "规划生成失败，以下内容仅供核验。" : "当前结果未标记为降级");
+    setTextList(degraded, (documentData.degraded_agents || []).map((agent) => `${agent}：结果已降级，请核验"待核验事项"。`), documentData.status === "failed" ? "规划生成失败，以下内容仅供核验。" : "当前结果未标记为降级");
     error.hidden = true;
     result.hidden = false;
   }
@@ -90,8 +115,12 @@
     return `请求失败（${response.status}）`;
   }
 
+  startExperienceButton.addEventListener("click", startExperience);
+  newPlanButton.addEventListener("click", startNewPlan);
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    result.hidden = true;
     status.textContent = "正在生成旅行规划…";
     error.hidden = true;
     submit.disabled = true;
