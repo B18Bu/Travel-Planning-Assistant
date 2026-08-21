@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+import re
 from uuid import uuid4
 
 import pytest
@@ -160,6 +161,31 @@ def test_summary_escapes_external_newlines_without_extra_heading():
     assert document.markdown.count("## ") == 8
     assert "杭州 \\#\\# 伪造" in document.markdown
     assert "## 伪造" not in document.markdown.replace("## 伪造", "", 1)
+
+
+def test_summary_escapes_html_markup_and_ampersands_in_external_text():
+    values = results()
+    weather = result(
+        "weather",
+        AgentStatus.success,
+        WeatherPlanData(
+            destination="<script>alert(1)</script> & 城市",
+            daily=(DailyWeather(date=date(2026, 9, 1), condition="晴 & <b>危险</b>", risk_level="low"),),
+        ),
+        (source("天气 & <script>", SourceType.weather_api),),
+        ("提醒 & <em>检查</em>",),
+    )
+
+    document = SummaryAgent().run(
+        weather, values[1], values[2], values[3], request_id=REQUEST_ID, trace_id=REQUEST_ID
+    )
+
+    assert "<script>" not in document.markdown
+    assert "</script>" not in document.markdown
+    assert "<b>" not in document.markdown
+    assert "<em>" not in document.markdown
+    assert re.search(r"(?<!\\)&", document.markdown) is None
+    assert "\\& 城市" in document.markdown
 
 
 def test_summary_rejects_mismatched_tracking_ids():

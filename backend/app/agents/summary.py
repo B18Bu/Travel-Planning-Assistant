@@ -78,6 +78,7 @@ class SummaryAgent:
     @staticmethod
     def _safe(value: object) -> str:
         text = str(value).replace("\r", " ").replace("\n", " ")
+        text = text.replace("&", "\\&").replace("<", "\\<")
         return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", text)
 
     @classmethod
