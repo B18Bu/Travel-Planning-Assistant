@@ -12,12 +12,68 @@ ENV_EXAMPLE = Path(__file__).parents[1] / ".env.example"
 def test_settings_expose_fixed_service_and_resilience_defaults():
     settings = Settings()
 
-    assert settings.heweather_base_url == "https://devapi.qweather.com"
-    assert settings.amap_base_url == "https://restapi.amap.com"
-    assert settings.weather_cache_ttl_seconds == 1800
-    assert settings.amap_route_cache_ttl_seconds == 900
-    assert settings.external_max_attempts == 3
-    assert settings.circuit_breaker_open_seconds == 60
+    expected_defaults = {
+        "heweather_base_url": "https://devapi.qweather.com",
+        "amap_base_url": "https://restapi.amap.com",
+        "external_connect_timeout_seconds": 3.0,
+        "external_read_timeout_seconds": 8.0,
+        "external_total_timeout_seconds": 10.0,
+        "external_max_attempts": 3,
+        "circuit_breaker_failure_threshold": 3,
+        "circuit_breaker_open_seconds": 60,
+        "weather_cache_ttl_seconds": 1800,
+        "amap_geocode_cache_ttl_seconds": 604800,
+        "amap_route_cache_ttl_seconds": 900,
+        "amap_poi_cache_ttl_seconds": 3600,
+    }
+
+    for field, expected in expected_defaults.items():
+        assert getattr(settings, field) == expected
+
+
+def test_env_example_parses_external_defaults_without_real_keys(monkeypatch):
+    env_names = [
+        "HEWEATHER_API_KEY",
+        "HEWEATHER_BASE_URL",
+        "AMAP_API_KEY",
+        "AMAP_BASE_URL",
+        "EXTERNAL_CONNECT_TIMEOUT_SECONDS",
+        "EXTERNAL_READ_TIMEOUT_SECONDS",
+        "EXTERNAL_TOTAL_TIMEOUT_SECONDS",
+        "EXTERNAL_MAX_ATTEMPTS",
+        "CIRCUIT_BREAKER_FAILURE_THRESHOLD",
+        "CIRCUIT_BREAKER_OPEN_SECONDS",
+        "WEATHER_CACHE_TTL_SECONDS",
+        "AMAP_GEOCODE_CACHE_TTL_SECONDS",
+        "AMAP_ROUTE_CACHE_TTL_SECONDS",
+        "AMAP_POI_CACHE_TTL_SECONDS",
+    ]
+    for name in env_names:
+        monkeypatch.delenv(name, raising=False)
+
+    defaults = Settings(_env_file=None)
+    parsed = Settings(_env_file=ENV_EXAMPLE)
+
+    fields = [
+        "heweather_base_url",
+        "amap_base_url",
+        "external_connect_timeout_seconds",
+        "external_read_timeout_seconds",
+        "external_total_timeout_seconds",
+        "external_max_attempts",
+        "circuit_breaker_failure_threshold",
+        "circuit_breaker_open_seconds",
+        "weather_cache_ttl_seconds",
+        "amap_geocode_cache_ttl_seconds",
+        "amap_route_cache_ttl_seconds",
+        "amap_poi_cache_ttl_seconds",
+    ]
+    for field in fields:
+        assert getattr(parsed, field) == getattr(defaults, field)
+        assert type(getattr(parsed, field)) is type(getattr(defaults, field))
+
+    assert parsed.heweather_api_key == ""
+    assert parsed.amap_api_key == ""
 
 
 def test_runtime_config_documents_api_scope_defaults_units_and_backend_boundary():
