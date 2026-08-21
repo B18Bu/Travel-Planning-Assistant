@@ -63,7 +63,7 @@ async def request_with_retry(
             continue
 
         status_code = getattr(response, "status_code", None)
-        if status_code == 429 or status_code is not None and status_code >= 500:
+        if status_code == 429 or status_code is not None and 500 <= status_code < 600:
             if attempt == max_attempts - 1:
                 raise ExternalServiceUnavailable()
             await asyncio.sleep(0.05 * (2**attempt))

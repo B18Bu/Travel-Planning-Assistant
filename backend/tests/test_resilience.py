@@ -100,6 +100,21 @@ async def test_request_with_retry_returns_400_without_retry():
 
 
 @pytest.mark.asyncio
+async def test_request_with_retry_returns_600_without_retry():
+    attempts = 0
+
+    async def send():
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(600)
+
+    response = await request_with_retry(send, max_attempts=3)
+
+    assert response.status_code == 600
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
 async def test_request_with_retry_raises_controlled_error_after_exhaustion(monkeypatch):
     async def send():
         raise httpx.TimeoutException("https://secret.example/path")
@@ -129,19 +144,32 @@ def test_circuit_breaker_opens_at_failure_threshold():
 
 
 def test_circuit_breaker_resets_after_open_period():
-    breaker = CircuitBreaker(failure_threshold=1, open_seconds=0)
+    breaker = CircuitBreaker(failure_threshold=2, open_seconds=60)
+
+    breaker.record_failure()
+    breaker.record_failure()
+    breaker._opened_at = datetime.now(timezone.utc).replace(year=2020)
+    breaker.ensure_available()
 
     breaker.record_failure()
     breaker.ensure_available()
     breaker.record_failure()
-    assert breaker.failure_count == 1
+    with pytest.raises(ExternalServiceUnavailable, match="外部服务熔断中"):
+        breaker.ensure_available()
 
 
 def test_circuit_breaker_success_clears_failures_and_open_state():
     breaker = CircuitBreaker(failure_threshold=2, open_seconds=60)
 
     breaker.record_failure()
+    breaker.record_failure()
+    with pytest.raises(ExternalServiceUnavailable, match="外部服务熔断中"):
+        breaker.ensure_available()
+
     breaker.record_success()
     breaker.ensure_available()
     breaker.record_failure()
     breaker.ensure_available()
+    breaker.record_failure()
+    with pytest.raises(ExternalServiceUnavailable, match="外部服务熔断中"):
+        breaker.ensure_available()
