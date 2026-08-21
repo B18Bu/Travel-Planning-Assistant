@@ -444,3 +444,62 @@ async def test_weather_temperature_accepts_none_or_integer_values(value):
     }))
     result = await client().daily_forecast("city", date(2026, 9, 1), 1)
     assert result["daily"][0]["temp_min"] == value if isinstance(value, int) or value is None else int(value)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_cache_contains_only_controlled_projection():
+    cache = MemoryCache()
+    respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json={
+        "code": "200",
+        "updateTime": "2026-08-20T10:00:00Z",
+        "key": "supplier-secret",
+        "daily": [{"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "20", "tempMax": "28", "raw": "discard"}],
+    }))
+
+    await client(cache=cache).daily_forecast("city", date(2026, 9, 1), 1)
+
+    cached_value = next(iter(cache._entries.values()))[0]
+    assert set(cached_value) == {"source_updated_at", "daily"}
+    assert set(cached_value["daily"][0]) == {"date", "condition", "temp_min", "temp_max"}
+    assert "code" not in cached_value
+    assert "updateTime" not in cached_value
+    assert "supplier-secret" not in repr(cached_value)
+
+
+@pytest.mark.parametrize("payload", [
+    None,
+    {"code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": {}},
+    {"code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": [None]},
+    {"code": "200", "updateTime": "2026-08-20T10:00:00Z", "daily": [{"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "坏", "tempMax": "28"}]},
+])
+@respx.mock
+@pytest.mark.asyncio
+async def test_each_malformed_weather_shape_records_breaker_failure(payload):
+    respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(200, json=payload))
+    weather_client = client()
+
+    with pytest.raises(ExternalServiceUnavailable, match="和风天气未返回有效数据"):
+        await weather_client.daily_forecast("city", date(2026, 9, 1), 1)
+
+    assert weather_client.breaker.failure_count == 1
+
+
+@pytest.mark.parametrize("status_code", [400, 401])
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_non_2xx_success_shaped_response_is_not_cached(status_code):
+    cache = MemoryCache()
+    route = respx.get(f"{BASE}/v7/weather/3d").mock(return_value=httpx.Response(status_code, json={
+        "code": "200",
+        "updateTime": "2026-08-20T10:00:00Z",
+        "daily": [{"fxDate": "2026-09-01", "textDay": "晴", "tempMin": "20", "tempMax": "28"}],
+    }))
+    weather_client = client(cache=cache)
+
+    with pytest.raises(ExternalServiceUnavailable, match="和风天气未返回有效数据"):
+        await weather_client.daily_forecast("city", date(2026, 9, 1), 1)
+
+    assert route.call_count == 1
+    assert cache._entries == {}
+    assert weather_client.breaker.failure_count == 1

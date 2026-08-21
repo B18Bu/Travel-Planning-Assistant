@@ -313,3 +313,37 @@ async def test_amap_route_numbers_must_be_strict_integer(field, value):
     with pytest.raises(ExternalServiceUnavailable, match="有效路线"):
         await amap.driving_route("a", "b")
     assert amap.breaker.failure_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_poi_more_than_ten_results_returns_only_first_ten():
+    pois = [
+        {"name": f"餐厅{i}", "address": f"道路{i}", "location": f"1,{i}", "type": "餐饮"}
+        for i in range(11)
+    ]
+    respx.get(f"{BASE}/v5/place/text").mock(
+        return_value=httpx.Response(200, json={"status": "1", "pois": pois})
+    )
+
+    result = await client().search_poi("餐饮", "成都")
+
+    assert len(result) == 10
+    assert [item["name"] for item in result] == [f"餐厅{i}" for i in range(10)]
+
+
+@pytest.mark.parametrize("field", ["distance", "duration"])
+@respx.mock
+@pytest.mark.asyncio
+async def test_amap_route_negative_measurements_are_controlled(field):
+    path = {"distance": "100", "duration": "60"}
+    path[field] = -1
+    respx.get(f"{BASE}/v5/direction/driving").mock(
+        return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [path]}})
+    )
+    amap = client()
+
+    with pytest.raises(ExternalServiceUnavailable, match="有效路线"):
+        await amap.driving_route("a", "b")
+
+    assert amap.breaker.failure_count == 1
