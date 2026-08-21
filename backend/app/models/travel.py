@@ -256,6 +256,8 @@ class AgentResult(StrictModel, Generic[ResultData]):
         if self.status is AgentStatus.success:
             if self.data is None or self.missing_fields or self.error is not None:
                 raise ValueError("success 结果必须含数据且不得含缺失字段或错误")
+            if isinstance(self.data, WeatherPlanData) and not self.data.daily:
+                raise ValueError("success 天气结果必须至少包含一项逐日天气")
         elif self.status is AgentStatus.partial:
             if self.data is None or not self.missing_fields:
                 raise ValueError("partial 结果必须含数据和缺失字段")

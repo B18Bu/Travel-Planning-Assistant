@@ -461,6 +461,18 @@ def test_weather_plan_data_allows_empty_daily_for_degraded_result():
     assert result.data.daily == ()
 
 
+def test_weather_success_result_requires_at_least_one_daily_forecast():
+    with pytest.raises(ValidationError, match="success 天气结果必须至少包含一项逐日天气"):
+        AgentResult[WeatherPlanData](
+            agent="weather",
+            status=AgentStatus.success,
+            summary="天气规划结果",
+            data=WeatherPlanData(destination="杭州", daily=[]),
+            request_id="550e8400-e29b-41d4-a716-446655440000",
+            trace_id="550e8400-e29b-41d4-a716-446655440000",
+        )
+
+
 @pytest.mark.parametrize(
     ("model", "payload"),
     [
