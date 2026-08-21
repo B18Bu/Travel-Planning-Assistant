@@ -184,8 +184,17 @@ def test_summary_escapes_html_markup_and_ampersands_in_external_text():
     assert "</script>" not in document.markdown
     assert "<b>" not in document.markdown
     assert "<em>" not in document.markdown
-    assert re.search(r"(?<!\\)&", document.markdown) is None
-    assert "\\& 城市" in document.markdown
+    assert re.search(r"&(?!amp;|lt;|gt;)", document.markdown) is None
+    assert "&amp; 城市" in document.markdown
+
+
+def test_summary_safe_uses_html_entities_without_backslash_bypass():
+    safe = SummaryAgent._safe("<script>alert(1)</script> & value")
+
+    assert "&lt;script&gt;" in safe
+    assert "&amp; value" in safe
+    assert "<script" not in safe
+    assert "\\\\<" not in safe
 
 
 def test_summary_rejects_mismatched_tracking_ids():

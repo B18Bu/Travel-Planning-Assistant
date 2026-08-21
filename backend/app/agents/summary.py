@@ -78,8 +78,8 @@ class SummaryAgent:
     @staticmethod
     def _safe(value: object) -> str:
         text = str(value).replace("\r", " ").replace("\n", " ")
-        text = text.replace("&", "\\&").replace("<", "\\<")
-        return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", text)
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return re.sub(r"([\\`*_{}\[\]()#+.!|~-])", r"\\\1", text)
 
     @classmethod
     def _markdown(cls, itinerary: TravelPlanData, warnings: tuple[str, ...], degraded_agents: tuple[str, ...]) -> str:
