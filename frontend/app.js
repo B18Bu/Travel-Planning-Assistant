@@ -3,6 +3,7 @@
   const workspace = document.querySelector("#workspace");
   const startExperienceButton = document.querySelector("#start-experience");
   const newPlanButton = document.querySelector("#new-plan");
+  const backToIntroButton = document.querySelector("#back-to-intro");
   const workspaceTitle = document.querySelector("#workspace-title");
   const form = document.querySelector("#travel-form");
   const status = document.querySelector("#status");
@@ -15,6 +16,8 @@
   const departureInput = form.querySelector("input[name=departure_date]");
   const submit = form.querySelector("button[type=submit]");
   const originInput = form.querySelector("input[name=origin]");
+  let requestController = null;
+  let requestGeneration = 0;
 
   function todayIso() {
     const today = new Date();
@@ -33,7 +36,19 @@
     focusWorkspaceTitle();
   }
 
+  function showIntro() {
+    if (requestController) requestController.abort();
+    requestGeneration += 1;
+    submit.disabled = false;
+    intro.hidden = false;
+    workspace.hidden = true;
+    startExperienceButton.focus();
+  }
+
   function startNewPlan() {
+    if (requestController) requestController.abort();
+    requestGeneration += 1;
+    submit.disabled = false;
     form.reset();
     departureInput.min = todayIso();
     result.hidden = true;
@@ -117,9 +132,14 @@
 
   startExperienceButton.addEventListener("click", startExperience);
   newPlanButton.addEventListener("click", startNewPlan);
+  backToIntroButton.addEventListener("click", showIntro);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (requestController) requestController.abort();
+    requestController = new AbortController();
+    const controller = requestController;
+    const generation = ++requestGeneration;
     result.hidden = true;
     status.textContent = "正在生成旅行规划…";
     error.hidden = true;
@@ -130,9 +150,11 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       if (!response.ok) throw new Error(await nonOkMessage(response));
       const documentData = await response.json();
+      if (generation !== requestGeneration) return;
       renderDocument(documentData);
       if (documentData.status === "failed") {
         status.textContent = "规划生成失败，页面内容仅供核验。";
@@ -144,10 +166,15 @@
         status.textContent = "规划状态无法确认，请核验页面内容。";
       }
     } catch (requestError) {
+      if (requestError instanceof Error && requestError.name === "AbortError") return;
+      if (generation !== requestGeneration) return;
       setError(requestError instanceof Error ? requestError.message : "请求失败，请稍后重试。");
       status.textContent = "";
     } finally {
-      submit.disabled = false;
+      if (generation === requestGeneration) {
+        requestController = null;
+        submit.disabled = false;
+      }
     }
   });
 })();

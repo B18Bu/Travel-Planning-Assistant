@@ -45,7 +45,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, h2:focus-visible { o
 
 .workspace { min-height: 100dvh; }
 .topbar { display: flex; align-items: center; justify-content: space-between; min-height: 4.5rem; padding: .8rem clamp(1rem, 4vw, 3rem); border-bottom: 1px solid var(--border); background: var(--surface); }
-.brand { display: inline-flex; align-items: center; gap: .7rem; color: var(--text); font-weight: 800; text-decoration: none; }
+.brand { display: inline-flex; align-items: center; gap: .7rem; border: 0; padding: 0; color: var(--text); background: transparent; font-weight: 800; }
 .brand-mark { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: .55rem; color: #fff; background: var(--accent); font-size: .9rem; }
 .topbar-status { color: var(--text-muted); font-size: .82rem; }
 .workbench-shell { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: calc(100dvh - 4.5rem); }

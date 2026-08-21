@@ -63,6 +63,26 @@ def test_frontend_switches_intro_and_resets_real_plan_without_network_side_effec
     assert "form.reset" in script
 
 
+def test_frontend_isolates_cancelled_requests_and_handles_abort_silently():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "AbortController" in script
+    assert "requestGeneration" in script
+    assert "signal: controller.signal" in script
+    assert "requestError.name === \"AbortError\"" in script
+    assert "generation !== requestGeneration" in script
+
+
+def test_frontend_brand_returns_to_intro_with_button_event():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="back-to-intro"' in html
+    assert 'href="#intro"' not in html
+    assert "backToIntroButton.addEventListener" in script
+    assert "showIntro" in script
+
+
 def test_frontend_uses_relative_api_and_local_security_dependencies():
     app_js = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
     index_html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
