@@ -163,7 +163,7 @@ class WeatherPlanData(StrictModel):
     """天气 Agent 的规划结果。"""
 
     destination: NonEmptyText
-    daily: tuple[DailyWeather, ...] = Field(min_length=1)
+    daily: tuple[DailyWeather, ...] = ()
     constraints: tuple[NonEmptyText, ...] = ()
 
 

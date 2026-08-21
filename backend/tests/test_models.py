@@ -446,10 +446,24 @@ def test_agent_plan_models_construct_and_serialize():
     assert food_plan.model_dump()["daily_food"][0]["area"] == "西湖景区"
 
 
+def test_weather_plan_data_allows_empty_daily_for_degraded_result():
+    result = AgentResult[WeatherPlanData](
+        agent="weather",
+        status=AgentStatus.degraded,
+        summary="天气服务暂不可用",
+        data=WeatherPlanData(destination="杭州", daily=[]),
+        missing_fields=["daily_forecast"],
+        request_id="550e8400-e29b-41d4-a716-446655440000",
+        trace_id="550e8400-e29b-41d4-a716-446655440000",
+    )
+
+    assert result.data is not None
+    assert result.data.daily == ()
+
+
 @pytest.mark.parametrize(
     ("model", "payload"),
     [
-        (WeatherPlanData, {"destination": "杭州", "daily": []}),
         (RoutePlanData, {"origin": "上海", "destination": "杭州", "daily_areas": [], "weather_adjusted": False}),
         (LodgingPlanData, {"nights": -1, "recommended_area": "西湖景区"}),
         (FoodPlanData, {"daily_food": []}),
