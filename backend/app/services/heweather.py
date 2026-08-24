@@ -39,7 +39,7 @@ class HeWeatherClient:
             raise ExternalServiceUnavailable("和风天气请求日期无效")
         if not isinstance(days, int) or isinstance(days, bool) or days <= 0:
             raise ExternalServiceUnavailable("和风天气请求天数无效")
-        effective_days = min(days, 3)
+        effective_days = min(days, 15)
         cache_key = self._cache_key(location_id, start, effective_days)
         cached = self.cache.get(cache_key)
         if cached is not None:
@@ -52,7 +52,7 @@ class HeWeatherClient:
         token = self.breaker.ensure_available()
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await request_with_retry(lambda: client.get(f"{self._base_url}/v7/weather/3d", params={"location": location_id, "key": self.api_key}), max_attempts=self.max_attempts)
+                response = await request_with_retry(lambda: client.get(f"{self._base_url}/v7/weather/15d", params={"location": location_id, "key": self.api_key}), max_attempts=self.max_attempts)
                 if not 200 <= response.status_code < 300:
                     raise ExternalServiceUnavailable("和风天气未返回有效数据")
                 payload = response.json()

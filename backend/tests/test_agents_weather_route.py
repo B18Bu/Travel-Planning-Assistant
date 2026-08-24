@@ -245,7 +245,7 @@ def test_weather_agent_rejects_empty_daily_as_degraded_without_fabricated_weathe
     assert result.missing_fields == ("daily_forecast",)
 
 
-def test_weather_agent_limits_over_three_days_to_partial_with_exact_missing_field():
+def test_weather_agent_marks_shortfall_days_to_requested_range():
     agent = WeatherAgent(
         amap_client=FakeAmapClient(geocodes={"杭州": {"name": "杭州", "location": "120,30", "adcode": "330100", **source_metadata(SourceType.map_api)}}),
         weather_client=FakeWeatherClient(weather_payload(days=3)),
@@ -256,7 +256,7 @@ def test_weather_agent_limits_over_three_days_to_partial_with_exact_missing_fiel
     assert result.status is AgentStatus.partial
     assert result.request_id == result.trace_id
     assert len(result.data.daily) == 3
-    assert result.missing_fields == ("daily_forecast_days_4_to_N",)
+    assert result.missing_fields == ("daily_forecast_days_4_to_5",)
     assert result.sources[0].type is SourceType.map_api
     assert result.sources[1].type is SourceType.weather_api
 

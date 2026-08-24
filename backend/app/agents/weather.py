@@ -118,8 +118,7 @@ class WeatherAgent:
     def _missing_fields(request_days: int, actual_days: int) -> tuple[str, ...]:
         if actual_days >= request_days:
             return ()
-        end = "N" if request_days > 3 else str(request_days)
-        return (f"daily_forecast_days_{actual_days + 1}_to_{end}",)
+        return (f"daily_forecast_days_{actual_days + 1}_to_{request_days}",)
 
     @staticmethod
     def _constraints(daily: tuple[DailyWeather, ...]) -> tuple[str, ...]:
