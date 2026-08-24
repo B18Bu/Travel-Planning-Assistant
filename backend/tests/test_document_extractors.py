@@ -40,7 +40,7 @@ def test_extract_docx_keeps_heading_paths_body_order_and_semantic_table(tmp_path
 
     assert [item["content"] for item in extracted] == [
         "前言", "行程方案", "概览", "第一天", "上午游览",
-        "章节：行程方案 > 第一天\n表格 1\n表头：景点 | 时段 | 第 3 列\n第 2 行：景点=古城；时段=上午；第 3 列=\n第 3 行：景点=博物馆；时段=；第 3 列=室内",
+        "章节：行程方案 > 第一天\n表格 1\n表头：景点 | 时段 | 第 3 列\n第 1 行：景点=古城；时段=上午；第 3 列=\n第 2 行：景点=博物馆；时段=；第 3 列=室内",
         "注意事项", "携带雨具",
     ]
     assert [item["section_path"] for item in extracted] == [
@@ -52,7 +52,7 @@ def test_extract_docx_keeps_heading_paths_body_order_and_semantic_table(tmp_path
         "正文", "行程方案", "行程方案", "行程方案 > 第一天",
         "行程方案 > 第一天", "行程方案 > 第一天", "注意事项", "注意事项",
     ]
-    assert [item["source_order"] for item in extracted] == list(range(1, 9))
+    assert [item["source_order"] for item in extracted] == list(range(8))
     assert extracted[5]["source_table"] == 1
 
 
@@ -210,6 +210,50 @@ def test_table_chunks_repeat_context_without_overlapping_complete_data_rows():
     assert all(chunk.content.startswith(f"{context}\n") for chunk in chunks)
     combined = "\n".join(chunk.content.removeprefix(f"{context}\n") for chunk in chunks)
     assert all(combined.count(row) == 1 for row in rows)
+
+
+def test_chunking_truncates_oversized_prefixes_but_keeps_last_section_title():
+    section = "前级" * 40 + " > 末级标题"
+    text_chunks = chunk_extracted_content(
+        uuid4(), "报告.docx",
+        [{"content": "正文", "chunk_type": "text", "source_section": section}],
+        max_chars=20, overlap=0,
+    )
+    chart_chunks = chunk_extracted_content(
+        uuid4(), "报告.docx",
+        [{"content": "图表正文", "chunk_type": "chart_ocr", "source_section": section, "source_figure": 1}],
+        max_chars=20, overlap=0,
+    )
+    table_chunks = chunk_extracted_content(
+        uuid4(), "报告.docx",
+        [{"content": f"章节：{section}\n表格 1\n表头：列\n第 1 行：列=值", "chunk_type": "table", "source_section": section, "source_table": 1}],
+        max_chars=20, overlap=0,
+    )
+
+    assert all(chunk.content and len(chunk.content) <= 20 for chunk in text_chunks + chart_chunks + table_chunks)
+    assert all("末级标题" in chunk.content for chunk in text_chunks + chart_chunks + table_chunks)
+    assert text_chunks[-1].content.endswith("正文")
+    assert chart_chunks[-1].content.endswith("图表正文")
+    assert table_chunks[-1].content.endswith("值")
+
+
+def test_table_chunk_offsets_follow_original_row_body_and_ignore_continuation_labels():
+    context = "章节：行程\n表格 1\n表头：项目"
+    first = "第 1 行：项目=短值"
+    second = "第 2 行：项目=" + "甲" * 30
+    body = f"{first}\n{second}"
+    chunks = chunk_extracted_content(
+        uuid4(), "报告.docx",
+        [{"content": f"{context}\n{body}", "chunk_type": "table", "source_section": "行程", "source_table": 1}],
+        max_chars=42, overlap=0,
+    )
+
+    assert len(chunks) >= 3
+    assert (chunks[0].char_start, chunks[0].char_end) == (0, len(first))
+    second_start = len(first) + 1
+    assert chunks[1].char_start == second_start + len("第 2 行：")
+    assert chunks[-1].char_start < chunks[-1].char_end == second_start + len(second)
+    assert all(second_start <= chunk.char_start < chunk.char_end <= second_start + len(second) for chunk in chunks[1:])
 
 
 @pytest.mark.skipif(Document is None, reason="未安装 python-docx")

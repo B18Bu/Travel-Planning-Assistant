@@ -57,6 +57,15 @@ def _make_chunk(
     )
 
 
+def _prefix_with_section(section: str, suffix: str, max_chars: int) -> str:
+    """压缩来源前缀，保留末级标题并为正文至少留一个字符。"""
+    last_section = section.rsplit(" > ", 1)[-1]
+    available = max_chars - len(suffix) - 1
+    if available <= 0:
+        return ""
+    return f"章节：{last_section[-available:]}{suffix}"
+
+
 def _chunk_text(
     document_id: UUID,
     document_name: str,
@@ -69,7 +78,8 @@ def _chunk_text(
 ) -> list[DocumentChunk]:
     capacity = max_chars - len(prefix)
     if capacity <= 0:
-        raise ValueError("来源前缀超过分块长度上限")
+        prefix = ""
+        capacity = max_chars
     chunks: list[DocumentChunk] = []
     start = 0
     while start < len(content):
@@ -85,11 +95,17 @@ def _chunk_text(
     return chunks
 
 
-def _table_context(content: str) -> tuple[str, list[str]]:
+def _table_context(content: str, max_chars: int) -> tuple[str, list[str]]:
     lines = content.splitlines()
     if len(lines) < 3:
-        return content, []
-    return "\n".join(lines[:3]), lines[3:]
+        return content[:max_chars - 1], []
+    section = lines[0].removeprefix("章节：")
+    metadata = f"\n{lines[1]}\n{lines[2]}"
+    prefix = _prefix_with_section(section, metadata, max_chars)
+    if prefix:
+        return prefix, lines[3:]
+    # 极小上限时优先保留末级标题，宁可省略无法容纳的表格元数据。
+    return _prefix_with_section(section, "", max_chars), lines[3:]
 
 
 def _chunk_table(
@@ -99,49 +115,54 @@ def _chunk_table(
     item: dict,
     max_chars: int,
 ) -> list[DocumentChunk]:
-    context, rows = _table_context(content)
-    if len(context) >= max_chars:
-        raise ValueError("表格上下文超过分块长度上限")
+    context, rows = _table_context(content, max_chars)
     chunks: list[DocumentChunk] = []
-    body_start = 0
-    pending: list[str] = []
+    pending: list[tuple[str, int, int]] = []
+    source_offset = 0
 
-    def emit(lines: list[str]) -> None:
-        nonlocal body_start
-        body = "\n".join(lines)
+    def emit(lines: list[tuple[str, int, int]]) -> None:
+        body = "\n".join(line for line, _, _ in lines)
         part = context if not body else f"{context}\n{body}"
         chunks.append(_make_chunk(
             document_id, document_name, part, item,
-            char_start=body_start, char_end=body_start + len(body),
+            char_start=lines[0][1] if lines else 0,
+            char_end=lines[-1][2] if lines else 0,
         ))
-        body_start += len(body)
 
     for row in rows:
-        candidate = "\n".join(pending + [row])
+        row_start = source_offset
+        row_end = row_start + len(row)
+        source_offset = row_end + 1
+        candidate = "\n".join(line for line, _, _ in pending + [(row, row_start, row_end)])
         if len(context) + 1 + len(candidate) <= max_chars:
-            pending.append(row)
+            pending.append((row, row_start, row_end))
             continue
         if pending:
             emit(pending)
             pending = []
         if len(context) + 1 + len(row) <= max_chars:
-            pending.append(row)
+            pending.append((row, row_start, row_end))
             continue
         label, separator, remainder = row.partition("：")
-        initial_label = f"{label}{separator}" if separator else ""
-        continuation_label = f"{label}（续）：" if separator else ""
-        first = True
-        while remainder:
-            row_label = initial_label if first else continuation_label
-            room = max_chars - len(context) - 1 - len(row_label)
-            if room <= 0:
-                raise ValueError("表格行标签超过分块长度上限")
-            end = _natural_end(remainder, 0, room)
-            emit([row_label + remainder[:end]])
-            remainder = remainder[end:]
-            first = False
         if not separator:
             raise ValueError("表格行格式无效")
+        source_cursor = row_start + len(label) + 1
+        first = True
+        while remainder:
+            row_label = f"{label}{separator}" if first else f"{label}（续）："
+            room = max_chars - len(context) - 1 - len(row_label)
+            if room <= 0:
+                row_label = ""
+                room = max_chars - len(context) - 1
+            if room <= 0:
+                context = ""
+                room = max_chars
+            end = _natural_end(remainder, 0, room)
+            part = remainder[:end]
+            emit([(row_label + part, source_cursor, source_cursor + len(part))])
+            source_cursor += len(part)
+            remainder = remainder[end:]
+            first = False
     if pending or not chunks:
         emit(pending)
     return chunks
@@ -199,9 +220,9 @@ def chunk_extracted_content(
         if not isinstance(section, str) or not section:
             section = _section_name(tuple(item.get("section_path", ())))
         if chunk_type == "chart_ocr":
-            prefix = f"章节：{section}\n图表 {item.get('source_figure', 1)}\n\n"
+            prefix = _prefix_with_section(section, f"\n图表 {item.get('source_figure', 1)}\n\n", max_chars)
         elif section != "正文":
-            prefix = f"章节：{section}\n\n"
+            prefix = _prefix_with_section(section, "\n\n", max_chars)
         else:
             prefix = ""
         chunks.extend(_chunk_text(
@@ -224,12 +245,14 @@ def _format_table(table, section: str, table_index: int) -> str:
     header_cells = [cell.text.strip() for cell in table.rows[header_index - 1].cells]
     headers = [value or f"第 {index} 列" for index, value in enumerate(header_cells, start=1)]
     lines = [f"章节：{section}", f"表格 {table_index}", f"表头：{' | '.join(headers)}"]
-    for row_index, row in enumerate(table.rows[header_index:], start=header_index + 1):
+    data_row_index = 0
+    for row in table.rows[header_index:]:
         values = [cell.text.strip() for cell in row.cells]
         if not any(values):
             continue
+        data_row_index += 1
         pairs = "；".join(f"{header}={value}" for header, value in zip(headers, values))
-        lines.append(f"第 {row_index} 行：{pairs}")
+        lines.append(f"第 {data_row_index} 行：{pairs}")
     return "\n".join(lines)
 
 
@@ -263,7 +286,7 @@ def extract_docx(path: Path | str, extracted_dir: Path | str) -> list[dict]:
     heading_path: list[str] = []
     table_index = 0
     figure_index = 0
-    source_order = 0
+    source_order = -1
     paragraphs_by_element = {paragraph._p: paragraph for paragraph in document.paragraphs}
     tables_by_element = {table._tbl: table for table in document.tables}
 
