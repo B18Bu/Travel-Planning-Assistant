@@ -19,6 +19,7 @@ class DeepSeekClient:
         breaker: CircuitBreaker | None = None,
         max_attempts: int = 3,
         max_tokens: int = 2000,
+        min_response_length: int = 20,
         timeout: httpx.Timeout | float = 10.0,
     ) -> None:
         if base_url != self._base_url:
@@ -29,11 +30,14 @@ class DeepSeekClient:
             raise ValueError("max_attempts 必须在 1 到 3 之间")
         if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or not 256 <= max_tokens <= 8192:
             raise ValueError("max_tokens 必须在 256 到 8192 之间")
+        if not isinstance(min_response_length, int) or isinstance(min_response_length, bool) or not 1 <= min_response_length <= 100:
+            raise ValueError("min_response_length 必须在 1 到 100 之间")
         self.api_key = api_key
         self.model = model
         self.breaker = breaker or CircuitBreaker(3, 60)
         self.max_attempts = max_attempts
         self.max_tokens = max_tokens
+        self.min_response_length = min_response_length
         self.timeout = timeout
 
     async def chat_completion(self, system_prompt: str, user_prompt: str) -> str:
@@ -89,6 +93,6 @@ class DeepSeekClient:
         if not isinstance(content, str) or not content.strip():
             raise ValueError("DeepSeek 响应结构错误")
         stripped = content.strip()
-        if len(stripped) < 20 or len(stripped) > self.max_tokens * 4:
+        if len(stripped) < self.min_response_length or len(stripped) > self.max_tokens * 4:
             raise ValueError("DeepSeek 响应长度无效")
         return stripped

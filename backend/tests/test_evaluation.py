@@ -29,6 +29,11 @@ def test_context_precision_zero_relevant_is_zero():
     assert _context_precision(set(), 5) == 0.0
 
 
+def test_context_precision_ignores_out_of_range_positions():
+    # 越界编号不应计入分母：{1, 3, 4} 与过滤后的 {1, 3} 结果等值
+    assert _context_precision({1, 3, 4}, 3) == _context_precision({1, 3}, 3)
+
+
 class FakeDeepSeek:
     def __init__(self, response: str):
         self.response = response
@@ -47,3 +52,21 @@ async def test_judge_faithfulness_parses_supported_ratio():
 async def test_judge_context_precision_unparseable_returns_none():
     judge = Judge(FakeDeepSeek("完全无法解析的输出"))
     assert await judge.context_precision("q", []) is None
+
+
+@pytest.mark.asyncio
+async def test_judge_answer_relevance_parses_bare_number():
+    judge = Judge(FakeDeepSeek("0.8"))
+    assert await judge.answer_relevance("q", "答") == pytest.approx(0.8)
+
+
+@pytest.mark.asyncio
+async def test_judge_answer_relevance_parses_number_in_sentence():
+    judge = Judge(FakeDeepSeek("评分：0.6|不充分"))
+    assert await judge.answer_relevance("q", "答") == pytest.approx(0.6)
+
+
+@pytest.mark.asyncio
+async def test_judge_answer_relevance_unparseable_returns_none():
+    judge = Judge(FakeDeepSeek("无法解析"))
+    assert await judge.answer_relevance("q", "答") is None

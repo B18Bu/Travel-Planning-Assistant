@@ -109,6 +109,18 @@ async def test_raises_when_content_empty_or_too_short():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_accepts_short_response_when_min_response_length_lowered():
+    short = "0.8|切题"
+    route = respx.post(f"{BASE}/chat/completions").mock(return_value=completion_response(short))
+
+    result = await client(min_response_length=1).chat_completion("s", "u")
+
+    assert route.call_count == 1
+    assert result == short
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_missing_key_raises_without_http_call():
     route = respx.post(f"{BASE}/chat/completions").mock(return_value=completion_response(LONG_ANSWER))
 
@@ -129,3 +141,9 @@ def test_rejects_noncanonical_base_url():
 def test_rejects_invalid_max_tokens(value):
     with pytest.raises(ValueError):
         client(max_tokens=value)
+
+
+@pytest.mark.parametrize("value", [0, 101, True, False, 1.5, "not-a-number"])
+def test_rejects_invalid_min_response_length(value):
+    with pytest.raises(ValueError):
+        client(min_response_length=value)

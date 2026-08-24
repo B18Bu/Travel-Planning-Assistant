@@ -46,15 +46,18 @@ def _parse_pair_lines(
 
 def _context_precision(relevant_positions: set[int], total: int) -> float:
     """RAGAS 上下文准确率 CP@k = Σ_k(P@k × v_k) / R。"""
-    if not relevant_positions or total <= 0:
+    if total <= 0:
+        return 0.0
+    positions = {p for p in relevant_positions if 1 <= p <= total}
+    if not positions:
         return 0.0
     relevant_in_k = 0
     acc = 0.0
     for k in range(1, total + 1):
-        if k in relevant_positions:
+        if k in positions:
             relevant_in_k += 1
             acc += relevant_in_k / k
-    return acc / len(relevant_positions)
+    return acc / len(positions)
 
 
 class Judge:
@@ -114,7 +117,7 @@ class Judge:
         pairs = _parse_pair_lines(raw, "相关", "不相关")
         if not pairs:
             return None
-        relevant = {num for num, ok in pairs if ok}
+        relevant = {num for num, ok in pairs if ok and num <= len(context_results)}
         return _context_precision(relevant, len(context_results))
 
     async def answer_relevance(self, question: str, answer: str) -> float | None:
@@ -125,7 +128,7 @@ class Judge:
             "只输出：<0-1数字>|<一句话理由>"
         )
         raw = await self._ask(prompt)
-        match = re.match(r"\s*([0-9]*\.?[0-9]+)\s*\|", raw)
+        match = re.search(r"([0-9]*\.?[0-9]+)", raw)
         if not match:
             return None
         try:
