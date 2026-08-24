@@ -164,7 +164,7 @@
   .feature-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .92fr); gap: 24px; align-items: start; }
   .feature-visual, .feature-action { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 22px; box-shadow: var(--shadow); }
   .feature-split-plan .feature-visual { display: flex; flex-direction: column; }
-  .feature-split-plan .travel-window { height: 480px; }
+  .feature-split-plan .travel-window { height: 320px; }
   .feature-split-plan .feature-action { height: 480px; }
   .feature-split-plan .route-form { margin-top: 0; }
   .feature-split-guide .feature-visual { display: flex; }
@@ -582,7 +582,7 @@
   @media (max-width: 640px) {
     .main { padding: 14px 14px 32px; }
     .feature-visual, .feature-action { padding: 16px; border-radius: 14px; }
-    .feature-split-plan .travel-window { height: 255px; }
+    .feature-split-plan .travel-window { height: 170px; }
     .feature-split-plan .feature-action { height: auto; }
     .feature-split-guide .digital-human-card { min-height: 330px; }
     .feature-split-guide .feature-action { height: auto; }
