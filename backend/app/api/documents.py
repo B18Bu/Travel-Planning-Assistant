@@ -38,7 +38,6 @@ from app.services.resilience import ExternalServiceUnavailable
 router = APIRouter(prefix="/api")
 _ALLOWED_MEDIA_TYPES = {PDF_MEDIA_TYPE, DOCX_MEDIA_TYPE}
 # 混合检索最终返回的结果数；语义与关键词各多拉取三倍候选，供城市过滤与融合留出余量。
-_RESULT_LIMIT = 5
 
 
 def _not_found() -> HTTPException:
@@ -234,15 +233,19 @@ async def search_knowledge(payload: KnowledgeSearchRequest, request: Request) ->
     store = request.app.state.document_store
     if request.app.state.chroma_store is None:
         raise HTTPException(status_code=503, detail="知识检索服务暂不可用")
-    fetch_limit = _RESULT_LIMIT * 3
+    query = payload.query.strip()
+    if not query:
+        raise HTTPException(status_code=422, detail="检索内容不能为空")
+    result_limit = request.app.state.settings.knowledge_search_result_limit
+    fetch_limit = result_limit * 3
     try:
         semantic_hits = await asyncio.to_thread(
             request.app.state.chroma_store.query,
-            payload.query,
+            query,
             document_ids=payload.document_ids,
             limit=fetch_limit,
         )
-        parsed = parse_query(payload.query)
+        parsed = parse_query(query)
         ready_records = await asyncio.to_thread(store.list_documents)
         if payload.document_ids:
             wanted = {str(document_id) for document_id in payload.document_ids}
@@ -261,7 +264,10 @@ async def search_knowledge(payload: KnowledgeSearchRequest, request: Request) ->
             for _record, chunks in indexed.values()
             for chunk in chunks.values()
         }
-        keyword_hits = search_chunks(list(chunks_by_id.values()), parsed, limit=fetch_limit)
+        keyword_hits = search_chunks(
+            list(chunks_by_id.values()), parsed,
+            document_ids=payload.document_ids, limit=fetch_limit,
+        )
         ranked = merge_ranked_hits(
             semantic_hits,
             keyword_hits,
@@ -270,7 +276,7 @@ async def search_knowledge(payload: KnowledgeSearchRequest, request: Request) ->
                 if chunk_id in chunks_by_id else None
             ),
             query_region=parsed.region,
-            limit=_RESULT_LIMIT,
+            limit=result_limit,
         )
     except (ExternalServiceUnavailable, RuntimeError, ValueError):
         raise HTTPException(status_code=503, detail="知识检索服务暂不可用") from None
@@ -302,7 +308,7 @@ async def search_knowledge(payload: KnowledgeSearchRequest, request: Request) ->
         if polisher is None:
             answer_status = "unavailable"
         else:
-            answer = await polisher.polish(payload.query, results)
+            answer = await polisher.polish(query, results)
             answer_status = "generated" if answer is not None else "unavailable"
 
     record_store = request.app.state.query_record_store
@@ -319,18 +325,18 @@ async def search_knowledge(payload: KnowledgeSearchRequest, request: Request) ->
                 except QueryRecordNotFound:
                     record_id = await asyncio.to_thread(
                         _create_query_record, record_store,
-                        payload.query, answer, answer_status, tuple(results),
+                        query, answer, answer_status, tuple(results),
                     )
             else:
                 record_id = await asyncio.to_thread(
                     _create_query_record, record_store,
-                    payload.query, answer, answer_status, tuple(results),
+                    query, answer, answer_status, tuple(results),
                 )
         except Exception:
             # 记录持久化失败不阻断检索结果返回。
             pass
     return KnowledgeSearchResponse(
-        query=payload.query, results=tuple(results), answer=answer,
+        query=query, results=tuple(results), answer=answer,
         answer_status=answer_status, record_id=record_id,
     )
 

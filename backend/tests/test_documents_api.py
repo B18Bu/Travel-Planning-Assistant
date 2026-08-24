@@ -19,7 +19,8 @@ class FakeChroma:
     def upsert(self, _chunks):
         return None
 
-    def query(self, _query, *, document_ids=(), limit=5):
+    def query(self, query, *, document_ids=(), limit=5):
+        self.last_query = (query, tuple(document_ids), limit)
         if not document_ids:
             return self.hits[:limit]
         return tuple(hit for hit in self.hits if hit.document_id in document_ids)[:limit]
@@ -596,3 +597,91 @@ async def test_knowledge_records_are_listed_deleted_and_cleared(tmp_path):
 
     assert cleared.status_code == 204
     assert after_clear.json() == []
+
+
+@pytest.mark.asyncio
+async def test_knowledge_search_fetches_three_times_the_configured_limit_and_returns_it(tmp_path):
+    """候选池必须大于最终结果数，融合排序才有取舍空间。"""
+    from app.services.chroma_store import ChromaSearchHit
+
+    app, record, chunk, chroma = app_with_documents(tmp_path)
+    store = app.state.document_store
+    extra = [
+        DocumentChunk(
+            id=str(uuid4()), document_id=str(record.id), content=f"成都亲子游第 {index} 段正文",
+            chunk_type="text", document_name=record.filename, source_page=index,
+        )
+        for index in range(1, 15)
+    ]
+    all_chunks = [chunk, *extra]
+    ready = store.get_document(record.id).model_copy(
+        update={"chunk_count": len(all_chunks), "text_chunk_count": len(all_chunks)}
+    )
+    store.save_processed_document(ready, all_chunks)
+    chroma.hits = tuple(
+        ChromaSearchHit(chunk_id=item.id, document_id=record.id, score=0.9 - index * 0.01)
+        for index, item in enumerate(all_chunks)
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
+        response = await client.post("/api/knowledge-search", json={"query": "成都亲子游", "document_ids": []})
+
+    limit = app.state.settings.knowledge_search_result_limit
+    assert chroma.last_query[2] == limit * 3
+    assert len(response.json()["results"]) == limit == 12
+
+
+@pytest.mark.asyncio
+async def test_knowledge_search_scopes_keyword_route_to_requested_documents(tmp_path, monkeypatch):
+    """关键词路不传文档范围会让被排除的文档重新进入结果，破坏用户选择的检索边界。"""
+    import app.api.documents as documents_api
+
+    app, record, _chunk, chroma = app_with_documents(tmp_path)
+    other_record, _other_chunk = ready_sanya_document(app.state.document_store)
+    captured = {}
+    original = documents_api.search_chunks
+
+    def capture(chunks, parsed, *, document_ids=(), limit=5):
+        captured["document_ids"] = tuple(document_ids)
+        captured["limit"] = limit
+        return original(chunks, parsed, document_ids=document_ids, limit=limit)
+
+    monkeypatch.setattr(documents_api, "search_chunks", capture)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
+        response = await client.post(
+            "/api/knowledge-search",
+            json={"query": "美食", "document_ids": [str(record.id)]},
+        )
+
+    assert captured["document_ids"] == (record.id,)
+    assert captured["limit"] == app.state.settings.knowledge_search_result_limit * 3
+    assert all(
+        result["source"]["document_name"] != other_record.filename
+        for result in response.json()["results"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_knowledge_search_rejects_whitespace_only_query_before_calling_backends(tmp_path):
+    """纯空白查询无法命中任何内容，必须在调用检索后端前拒绝。"""
+    app, _record, _chunk, chroma = app_with_documents(tmp_path)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
+        response = await client.post("/api/knowledge-search", json={"query": "   ", "document_ids": []})
+
+    assert response.status_code == 422
+    assert not hasattr(chroma, "last_query")
+
+
+@pytest.mark.asyncio
+async def test_knowledge_search_records_and_returns_the_normalized_query(tmp_path):
+    """记录与响应必须与真正检索的内容一致，否则复盘会误判召回质量。"""
+    app, _record, _chunk, _chroma = app_with_documents(tmp_path)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
+        response = await client.post(
+            "/api/knowledge-search",
+            json={"query": "  成都亲子游  ", "document_ids": []},
+        )
+
+    assert response.json()["query"] == "成都亲子游"
