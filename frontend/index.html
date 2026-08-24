@@ -64,7 +64,7 @@
         <div class="task-list" id="task-list"></div>
         <div class="history-foot">
           <span>按时间排序</span>
-          <button class="history-manage" type="button" aria-disabled="true">管理记录 →</button>
+          <button class="history-manage" type="button" onclick="openRecordsModal()">管理记录 →</button>
         </div>
       </div>
 
@@ -73,11 +73,14 @@
         <button class="side-nav" id="nav-dashboard" onclick="showView('dashboard')">
           <span>📊</span> 数据看板
         </button>
+        <button class="side-nav" id="nav-library" onclick="showView('library')">
+          <span>📚</span> 文档库
+        </button>
       </div>
 
       <div class="side-foot">
-        <div class="side-foot-item">📚 知识库 · 4 份文档 / 12 个内容块</div>
-        <div class="side-foot-item">🔄 最近索引 · 2026-08-18</div>
+        <div class="side-foot-item" id="kb-summary">📚 知识库 · 0 份文档 / 0 个内容块</div>
+        <div class="side-foot-item" id="kb-last-index">🔄 最近索引 · 暂无</div>
         <button class="side-settings" onclick="openSettings()">⚙️ 设置</button>
       </div>
     </aside>
@@ -182,6 +185,10 @@
                   <button class="btn-primary" onclick="homeRegion()">查攻略</button>
                 </div>
               </div>
+              <section class="knowledge-panel">
+                <p class="search-scope">📚 检索范围：全部已处理文档 · 可在“文档库”管理</p>
+                <div id="knowledge-results" class="knowledge-results" hidden></div>
+              </section>
             </div>
           </div>
         </div>
@@ -190,19 +197,34 @@
       <!-- 任务结果视图 -->
       <section id="view-task" class="view"></section>
 
+      <!-- 文档库 -->
+      <section id="view-library" class="view">
+        <div class="library-head">
+          <div>
+            <div class="zone-kicker">DOCUMENT LIBRARY</div>
+            <h2>文档库</h2>
+            <p>上传、处理和浏览已入库 Word/PDF 文档。</p>
+          </div>
+          <label class="library-upload"><input id="document-upload" type="file" accept=".docx,.pdf,application/pdf" multiple hidden>上传文档</label>
+        </div>
+        <p id="library-status" role="status" aria-live="polite"></p>
+        <section id="library-detail" class="library-detail" hidden></section>
+        <div id="library-list" class="library-list"></div>
+      </section>
+
       <!-- 数据看板 -->
       <section id="view-dashboard" class="view">
         <div class="dash-head">
           <div class="stat-card">
-            <div class="stat-num" data-target="42">0</div>
+            <div class="stat-num" id="dash-total" data-target="0">0</div>
             <div class="stat-label">累计反馈</div>
           </div>
           <div class="stat-card">
-            <div class="stat-num stat-good" data-target="92" data-suffix="%">0%</div>
+            <div class="stat-num stat-good" id="dash-good" data-target="0" data-suffix="%">0%</div>
             <div class="stat-label">知识库内容好评率</div>
           </div>
           <div class="stat-card">
-            <div class="stat-num stat-mid" data-target="61" data-suffix="%">0%</div>
+            <div class="stat-num stat-mid" id="dash-ai" data-target="0" data-suffix="%">0%</div>
             <div class="stat-label">AI 生成内容好评率</div>
           </div>
         </div>
@@ -211,13 +233,13 @@
           <div class="panel-title">来源类型对比 · 核心指标</div>
           <div class="bar-row">
             <div class="bar-label"><span class="pill pill-kb">📚</span> 知识库内容</div>
-            <div class="bar-track"><div class="bar-fill" style="--w:92%"></div></div>
-            <div class="bar-val">92% · 25👍 / 2👎</div>
+            <div class="bar-track"><div class="bar-fill" id="bar-kb-fill" style="--w:0%"></div></div>
+            <div class="bar-val" id="bar-kb-val">暂无评价</div>
           </div>
           <div class="bar-row">
             <div class="bar-label"><span class="pill pill-ai">🤖</span> AI 生成内容</div>
-            <div class="bar-track"><div class="bar-fill fill-llm" style="--w:61%"></div></div>
-            <div class="bar-val">61% · 8👍 / 5👎</div>
+            <div class="bar-track"><div class="bar-fill fill-llm" id="bar-ai-fill" style="--w:0%"></div></div>
+            <div class="bar-val" id="bar-ai-val">暂无评价</div>
           </div>
         </div>
 
@@ -226,12 +248,7 @@
             <div class="panel-title">按地区</div>
             <table class="data-table">
               <thead><tr><th>地区</th><th>👍</th><th>👎</th><th>总数</th><th>好评率</th></tr></thead>
-              <tbody>
-                <tr><td>成都</td><td>25</td><td>3</td><td>28</td><td class="num-good">89%</td></tr>
-                <tr><td>三亚</td><td>14</td><td>6</td><td>20</td><td class="num-mid">70%</td></tr>
-                <tr><td>西安</td><td>9</td><td>2</td><td>11</td><td class="num-good">82%</td></tr>
-                <tr><td>桂林</td><td>2</td><td>5</td><td>7</td><td class="num-bad">29%</td></tr>
-              </tbody>
+              <tbody id="dash-by-region"></tbody>
             </table>
           </div>
 
@@ -239,17 +256,12 @@
             <div class="panel-title">按来源文档</div>
             <table class="data-table">
               <thead><tr><th>来源文档</th><th>👍</th><th>👎</th><th>总数</th><th>好评率</th></tr></thead>
-              <tbody>
-                <tr><td>《成都旅游攻略.docx》</td><td>20</td><td>2</td><td>22</td><td class="num-good">91%</td></tr>
-                <tr><td>《成都三日游.pdf》</td><td>5</td><td>1</td><td>6</td><td class="num-good">83%</td></tr>
-                <tr><td>《三亚玩法.docx》</td><td>14</td><td>6</td><td>20</td><td class="num-mid">70%</td></tr>
-                <tr><td>《桂林周末游.pdf》</td><td>2</td><td>5</td><td>7</td><td class="num-bad">29%</td></tr>
-              </tbody>
+              <tbody id="dash-by-document"></tbody>
             </table>
           </div>
         </div>
 
-        <div class="panel panel-note">💡 知识库内容好评率显著高于 AI 生成内容，说明收录的文档对用户更有价值。建议优先补充「桂林」等低好评地区的资料。</div>
+        <div class="panel panel-note">💡 评价数据来自知识检索结果下方的「有用 / 没用」反馈。</div>
       </section>
     </main>
   </div>
@@ -309,6 +321,47 @@
     <div class="modal-foot">
       <button class="btn-ghost" onclick="closeConfirm()">取消</button>
       <button class="btn-danger" onclick="doDelete()">删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- 完整回答弹窗 -->
+<div class="modal-mask" id="answer-mask" onclick="closeAnswerModal(event)">
+  <div class="modal modal-answer" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <span class="modal-title">📄 完整回答</span>
+      <button class="modal-close" onclick="closeAnswerModal()" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-note" id="answer-query-note"></p>
+      <div id="answer-content" class="answer-content"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 管理记录弹窗 -->
+<div class="modal-mask" id="records-mask" onclick="closeRecordsModal(event)">
+  <div class="modal modal-records" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <span class="modal-title">📋 管理记录</span>
+      <button class="modal-close" onclick="closeRecordsModal()" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-note">全部知识检索记录（最新在前），可查看或删除。</p>
+      <div id="records-list" class="records-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 出行规划结果弹窗 -->
+<div class="modal-mask" id="travel-mask" onclick="closeTravelModal(event)">
+  <div class="modal modal-answer" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <span class="modal-title" id="travel-title">🗺️ 出行规划</span>
+      <button class="modal-close" onclick="closeTravelModal()" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="travel-content" class="answer-content"></div>
     </div>
   </div>
 </div>

@@ -104,7 +104,27 @@ class SummaryAgent:
         else:
             lines.append("- 暂无逐日天气数据，请出行前核验。")
         lines.extend(["", "## 每日路线"])
-        if route_data:
+        daily_itineraries = getattr(route_data, "daily_itineraries", None) if route_data else None
+        if daily_itineraries:
+            for daily in daily_itineraries:
+                lines.append(f"### 第 {daily.day} 天 · {cls._safe(route_data.destination)}")
+                lines.append("### 今日出游提醒")
+                lines.append(f"- {cls._safe(daily.weather_reminder)}")
+                if daily.attractions:
+                    for index, attraction in enumerate(daily.attractions):
+                        poi = attraction.poi
+                        lines.append(f"### {cls._safe(attraction.time_slot)} · {cls._safe(poi.name)}")
+                        lines.append(f"- 建议游玩约 {attraction.suggested_duration_minutes} 分钟。")
+                        lines.append(f"- 地址：{cls._safe(poi.address or '地址待核验')}。")
+                        if attraction.activity_note:
+                            lines.append(f"- {cls._safe(attraction.activity_note)}")
+                        if attraction.travel_to_next:
+                            lines.append(f"- 驾车约 {attraction.travel_to_next.duration_minutes} 分钟、约 {attraction.travel_to_next.distance_meters} 米。")
+                        elif index < len(daily.attractions) - 1:
+                            lines.append("- 下一段交通信息待核验，请以官方或地图信息为准。")
+                else:
+                    lines.append("- 暂无景点安排，请核验路线。")
+        elif route_data:
             lines.extend(f"- 第 {item.day} 天：{cls._safe(item.area)}。" for item in route_data.daily_areas)
         else:
             lines.append("- 暂无路线数据，请核验活动区域。")
@@ -120,8 +140,20 @@ class SummaryAgent:
         lines.extend(["", "## 餐饮建议"])
         if food_data:
             for daily in food_data.daily_food:
-                names = "、".join(candidate.poi.name for candidate in daily.candidates)
-                lines.append(f"- 第 {daily.day} 天 {cls._safe(daily.area)}：{cls._safe(names or '暂无候选，请按区域筛选')}。")
+                if daily.meal_period:
+                    nearby = cls._safe(daily.nearby_attraction_name or daily.area)
+                    lines.append(f"### 第 {daily.day} 天 · {cls._safe(daily.meal_period)} · {nearby}附近")
+                    if daily.candidates:
+                        for candidate in daily.candidates:
+                            lines.append(f"- {cls._safe(candidate.poi.name)}：{cls._safe(candidate.poi.address or '地址待核验')}。")
+                    elif daily.filter_suggestions:
+                        lines.extend(f"- {cls._safe(suggestion)}" for suggestion in daily.filter_suggestions)
+                    else:
+                        lines.append("- 暂无候选。")
+                    lines.append("- 营业时间、菜品与服务安排请以商家官方信息为准。")
+                else:
+                    names = "、".join(candidate.poi.name for candidate in daily.candidates)
+                    lines.append(f"- 第 {daily.day} 天 {cls._safe(daily.area)}：{cls._safe(names or '暂无候选，请按区域筛选')}。")
         else:
             lines.append("- 暂无餐饮数据，请核验。")
         lines.extend(["", "## 待核验事项"])

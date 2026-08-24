@@ -5,3 +5,16 @@ bash.exe.stackdump
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# 本地密钥配置，禁止提交
+.env
+
+# 本地文档库原文件、解析产物和向量索引，禁止提交
+backend/data/
+
+# Claude 会话工作树与头脑风暴运行时状态，禁止提交
+.claude/worktrees/
+.superpowers/
+
+# Office 打开文档时生成的锁定临时文件，禁止提交
+~$*

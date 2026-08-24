@@ -45,7 +45,7 @@ class AmapClient:
     async def driving_route(self, origin: str, destination: str) -> dict[str, Any]:
         self._require_text(origin, "高德地图请求起点无效")
         self._require_text(destination, "高德地图请求终点无效")
-        result = await self._get("route", [origin, destination], "/v5/direction/driving", {"origin": origin, "destination": destination}, self.route_cache_ttl_seconds)
+        result = await self._get("route", [origin, destination], "/v3/direction/driving", {"origin": origin, "destination": destination}, self.route_cache_ttl_seconds)
         item = result["data"]
         if not isinstance(item, dict) or not _non_negative_int(item.get("distance_meters")) or not _non_negative_int(item.get("duration_minutes")):
             raise ExternalServiceUnavailable("高德地图未返回有效路线")
@@ -55,6 +55,26 @@ class AmapClient:
         self._require_text(keywords, "高德地图请求关键词无效")
         self._require_text(city, "高德地图请求城市无效")
         result = await self._get("poi", [keywords, city], "/v5/place/text", {"keywords": keywords, "region": city, "city_limit": "true"}, self.poi_cache_ttl_seconds)
+        pois = result["data"]
+        if not isinstance(pois, list):
+            raise ExternalServiceUnavailable("高德地图未返回有效 POI")
+        for item in pois:
+            if not isinstance(item, dict) or not _non_empty_text(item.get("name")) or not _non_empty_text(item.get("category")) or not _optional_text(item.get("address")) or not _optional_text(item.get("location")):
+                raise ExternalServiceUnavailable("高德地图未返回有效 POI")
+        return [{**deepcopy(item), **self._metadata(result)} for item in pois]
+
+    async def search_nearby_poi(self, keywords: str, location: str, radius_meters: int) -> list[dict[str, Any]]:
+        self._require_text(keywords, "高德地图请求关键词无效")
+        self._require_text(location, "高德地图请求位置无效")
+        if not isinstance(radius_meters, int) or isinstance(radius_meters, bool) or radius_meters <= 0:
+            raise ExternalServiceUnavailable("高德地图请求半径无效")
+        result = await self._get(
+            "nearby_poi",
+            [keywords, location, str(radius_meters)],
+            "/v5/place/around",
+            {"keywords": keywords, "location": location, "radius": str(radius_meters)},
+            self.poi_cache_ttl_seconds,
+        )
         pois = result["data"]
         if not isinstance(pois, list):
             raise ExternalServiceUnavailable("高德地图未返回有效 POI")
@@ -105,7 +125,7 @@ class AmapClient:
             if not _non_empty_text(mapped["name"]) or not _optional_text(mapped["location"]) or not _optional_text(mapped["adcode"]):
                 raise ExternalServiceUnavailable("高德地图未找到地点")
             return mapped
-        if path == "/v5/direction/driving":
+        if path == "/v3/direction/driving":
             route = payload.get("route")
             paths = route.get("paths") if isinstance(route, dict) else None
             if not isinstance(paths, list) or not paths or not isinstance(paths[0], dict):
@@ -114,7 +134,7 @@ class AmapClient:
             if not _strict_int_string(path_item.get("distance")) or not _strict_int_string(path_item.get("duration")) or int(path_item["distance"]) < 0 or int(path_item["duration"]) < 0:
                 raise ExternalServiceUnavailable("高德地图未返回有效路线")
             return {"distance_meters": int(path_item["distance"]), "duration_minutes": round(int(path_item["duration"]) / 60)}
-        if path != "/v5/place/text":
+        if path not in {"/v5/place/text", "/v5/place/around"}:
             raise ExternalServiceUnavailable("高德地图未返回有效数据")
         pois = payload.get("pois", [])
         if not isinstance(pois, list):

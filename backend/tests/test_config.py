@@ -13,8 +13,10 @@ def test_settings_expose_fixed_service_and_resilience_defaults():
     settings = Settings()
 
     expected_defaults = {
-        "heweather_base_url": "https://devapi.qweather.com",
+        "heweather_base_url": "https://pb5ctx5qqr.re.qweatherapi.com",
         "amap_base_url": "https://restapi.amap.com",
+        "deepseek_base_url": "https://api.deepseek.com",
+        "deepseek_timeout_seconds": 60.0,
         "external_connect_timeout_seconds": 3.0,
         "external_read_timeout_seconds": 8.0,
         "external_total_timeout_seconds": 10.0,
@@ -81,6 +83,12 @@ def test_env_example_parses_external_defaults_without_real_keys(monkeypatch):
         "AMAP_GEOCODE_CACHE_TTL_SECONDS",
         "AMAP_ROUTE_CACHE_TTL_SECONDS",
         "AMAP_POI_CACHE_TTL_SECONDS",
+        "DOCUMENT_BATCH_MAX_FILES",
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "DEEPSEEK_MODEL",
+        "DEEPSEEK_MAX_TOKENS",
+        "DEEPSEEK_TIMEOUT_SECONDS",
     ]
     for name in env_names:
         monkeypatch.delenv(name, raising=False)
@@ -91,6 +99,9 @@ def test_env_example_parses_external_defaults_without_real_keys(monkeypatch):
     fields = [
         "heweather_base_url",
         "amap_base_url",
+        "deepseek_base_url",
+        "deepseek_model",
+        "deepseek_timeout_seconds",
         "external_connect_timeout_seconds",
         "external_read_timeout_seconds",
         "external_total_timeout_seconds",
@@ -101,6 +112,7 @@ def test_env_example_parses_external_defaults_without_real_keys(monkeypatch):
         "amap_geocode_cache_ttl_seconds",
         "amap_route_cache_ttl_seconds",
         "amap_poi_cache_ttl_seconds",
+        "document_batch_max_files",
     ]
     for field in fields:
         assert getattr(parsed, field) == getattr(defaults, field)
@@ -108,6 +120,69 @@ def test_env_example_parses_external_defaults_without_real_keys(monkeypatch):
 
     assert parsed.heweather_api_key == ""
     assert parsed.amap_api_key == ""
+    assert parsed.document_batch_max_files == 10
+    assert Path(parsed.document_data_dir).is_absolute()
+    assert Path(parsed.document_data_dir).resolve() == (Path(__file__).parents[1] / "data").resolve()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("mineru_base_url", "http://mineru.net"),
+        ("mineru_base_url", "https://evil.example"),
+        ("mineru_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        ("qwen_vl_base_url", "http://dashscope.aliyuncs.com/compatible-mode/v1"),
+        ("qwen_vl_base_url", "https://evil.example/compatible-mode/v1"),
+        ("qwen_vl_base_url", "https://mineru.net"),
+        ("deepseek_base_url", "http://api.deepseek.com"),
+        ("deepseek_base_url", "https://api.deepseek.com/"),
+        ("deepseek_base_url", "https://evil.example"),
+    ],
+)
+def test_settings_reject_noncanonical_external_service_base_urls(field, value):
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, **{field: value})
+
+
+def test_document_settings_are_backend_only_and_have_safe_defaults():
+    settings = Settings(_env_file=None)
+
+    assert Path(settings.document_data_dir).is_absolute()
+    assert Path(settings.document_data_dir).resolve() == (Path(__file__).parents[1] / "data").resolve()
+    assert settings.document_max_upload_bytes == 20 * 1024 * 1024
+    assert 0 < settings.document_max_upload_bytes <= 100 * 1024 * 1024
+    assert settings.document_batch_max_files == 10
+    assert 1 <= settings.document_batch_max_files <= 20
+    assert settings.chroma_collection_name == "travel_documents"
+    assert settings.mineru_api_key == ""
+    assert settings.mineru_base_url == "https://mineru.net"
+    assert settings.qwen_vl_api_key == ""
+    assert settings.qwen_vl_base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert settings.qwen_vl_model == "qwen-vl-max"
+    assert settings.bge_model_path == r"D:\作业\model\bge-small-zh-v1.5"
+    assert settings.deepseek_api_key == ""
+    assert settings.deepseek_base_url == "https://api.deepseek.com"
+    assert settings.deepseek_model == "deepseek-chat"
+    assert settings.deepseek_max_tokens == 2000
+    assert settings.deepseek_timeout_seconds == 60.0
+
+
+@pytest.mark.parametrize("value", [0, -1, 100 * 1024 * 1024 + 1, True, False, "1.2", 1.2, "not-a-number"])
+def test_settings_rejects_invalid_document_upload_size(value):
+    with pytest.raises(ValueError):
+        Settings(document_max_upload_bytes=value)
+
+
+@pytest.mark.parametrize("value", [0, -1, 21, True, False, "1.2", 1.2, "not-a-number"])
+def test_settings_rejects_invalid_document_batch_max_files(value):
+    with pytest.raises(ValueError):
+        Settings(document_batch_max_files=value)
+
+
+@pytest.mark.parametrize("value", [0, 255, 8193, True, False, "1.2", 1.2, "not-a-number"])
+def test_settings_rejects_invalid_deepseek_max_tokens(value):
+    with pytest.raises(ValueError):
+        Settings(deepseek_max_tokens=value)
 
 
 def test_runtime_config_documents_api_scope_defaults_units_and_backend_boundary():
@@ -145,6 +220,12 @@ def test_env_example_documents_each_external_setting_and_never_contains_secret()
         "AMAP_GEOCODE_CACHE_TTL_SECONDS",
         "AMAP_ROUTE_CACHE_TTL_SECONDS",
         "AMAP_POI_CACHE_TTL_SECONDS",
+        "DOCUMENT_BATCH_MAX_FILES",
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "DEEPSEEK_MODEL",
+        "DEEPSEEK_MAX_TOKENS",
+        "DEEPSEEK_TIMEOUT_SECONDS",
     ]:
         assert variable in text
 
@@ -166,7 +247,7 @@ def _comment_before_field(text: str, field: str) -> str:
 
 
 CONFIG_FIELD_DOCUMENTATION = {
-    "heweather_base_url": ["https://devapi.qweather.com", "和风天气", "仅由后端控制，不接受客户端覆盖"],
+    "heweather_base_url": ["https://pb5ctx5qqr.re.qweatherapi.com", "和风天气", "仅由后端控制，不接受客户端覆盖"],
     "amap_base_url": ["https://restapi.amap.com", "高德", "仅由后端控制，不接受客户端覆盖"],
     "external_connect_timeout_seconds": ["单位为秒，默认值：3.0", "所有外部 API", "仅由后端控制，不接受客户端覆盖"],
     "external_read_timeout_seconds": ["单位为秒，默认值：8.0", "所有外部 API", "仅由后端控制，不接受客户端覆盖"],
@@ -178,11 +259,15 @@ CONFIG_FIELD_DOCUMENTATION = {
     "amap_geocode_cache_ttl_seconds": ["单位为秒，默认值：604800", "高德地理编码", "仅由后端控制，不接受客户端覆盖"],
     "amap_route_cache_ttl_seconds": ["单位为秒，默认值：900", "高德驾车路线", "仅由后端控制，不接受客户端覆盖"],
     "amap_poi_cache_ttl_seconds": ["单位为秒，默认值：3600", "高德 POI", "仅由后端控制，不接受客户端覆盖"],
+    "deepseek_base_url": ["https://api.deepseek.com", "DeepSeek", "仅由后端控制，不接受客户端覆盖"],
+    "deepseek_model": ["deepseek-chat", "DeepSeek", "仅由后端控制，不接受客户端覆盖"],
+    "deepseek_max_tokens": ["默认值：2000", "DeepSeek", "仅由后端控制，不接受客户端覆盖"],
+    "deepseek_timeout_seconds": ["单位为秒，默认值：60.0", "DeepSeek", "仅由后端控制，不接受客户端覆盖"],
 }
 
 
 ENV_FIELD_DOCUMENTATION = {
-    "HEWEATHER_BASE_URL": ["https://devapi.qweather.com", "和风天气", "仅后端控制，客户端不可覆盖"],
+    "HEWEATHER_BASE_URL": ["https://pb5ctx5qqr.re.qweatherapi.com", "和风天气", "仅后端控制，客户端不可覆盖"],
     "AMAP_BASE_URL": ["https://restapi.amap.com", "高德", "仅后端控制，客户端不可覆盖"],
     "EXTERNAL_CONNECT_TIMEOUT_SECONDS": ["单位：秒，默认值：3.0", "所有外部 API", "仅后端控制，客户端不可覆盖"],
     "EXTERNAL_READ_TIMEOUT_SECONDS": ["单位：秒，默认值：8.0", "所有外部 API", "仅后端控制，客户端不可覆盖"],
@@ -194,6 +279,10 @@ ENV_FIELD_DOCUMENTATION = {
     "AMAP_GEOCODE_CACHE_TTL_SECONDS": ["单位：秒，默认值：604800", "高德地理编码", "仅后端控制，客户端不可覆盖"],
     "AMAP_ROUTE_CACHE_TTL_SECONDS": ["单位：秒，默认值：900", "高德驾车路线", "仅后端控制，客户端不可覆盖"],
     "AMAP_POI_CACHE_TTL_SECONDS": ["单位：秒，默认值：3600", "高德 POI", "仅后端控制，客户端不可覆盖"],
+    "DEEPSEEK_BASE_URL": ["https://api.deepseek.com", "DeepSeek", "仅后端控制，客户端不可覆盖"],
+    "DEEPSEEK_MODEL": ["deepseek-chat", "DeepSeek", "仅后端控制，客户端不可覆盖"],
+    "DEEPSEEK_MAX_TOKENS": ["默认值：2000", "DeepSeek", "仅后端控制，客户端不可覆盖"],
+    "DEEPSEEK_TIMEOUT_SECONDS": ["单位：秒，默认值：60.0", "DeepSeek", "仅后端控制，客户端不可覆盖"],
 }
 
 

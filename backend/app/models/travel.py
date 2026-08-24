@@ -136,8 +136,18 @@ class DailyWeather(StrictModel):
     temp_min: int | None = None
     temp_max: int | None = None
     risk_level: WeatherRiskLevel
+    travel_reminder: NonEmptyText
+    indoor_preferred: bool
     activity_suitability: str | None = None
     equipment_suggestions: tuple[NonEmptyText, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_indoor_preference(self) -> "DailyWeather":
+        """校验风险等级与室内活动偏好一致。"""
+
+        if self.indoor_preferred is not (self.risk_level is WeatherRiskLevel.high):
+            raise ValueError("室内活动偏好必须与天气风险等级一致")
+        return self
 
 
 class RouteEstimate(StrictModel):
@@ -156,6 +166,37 @@ class DailyArea(StrictModel):
     activity_window: str | None = None
 
 
+class TimedAttraction(StrictModel):
+    """带时段的景点安排。"""
+
+    time_slot: Literal["上午", "下午", "傍晚"]
+    poi: PoiCandidate
+    suggested_duration_minutes: int = Field(ge=1)
+    activity_note: str | None = None
+    travel_to_next: RouteEstimate | None = None
+
+
+class DailyItinerary(StrictModel):
+    """单日景区行程安排。"""
+
+    day: int = Field(ge=1)
+    weather_reminder: NonEmptyText
+    attractions: tuple[TimedAttraction, ...] = Field(max_length=3)
+    missing_fields: tuple[NonEmptyText, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_attractions_completeness(self) -> "DailyItinerary":
+        """校验空景点日程的缺失标记及时段排程顺序。"""
+
+        if not self.attractions and not self.missing_fields:
+            raise ValueError("空景点日程必须包含缺失字段")
+        slot_order = {"上午": 0, "下午": 1, "傍晚": 2}
+        slots = tuple(slot_order[item.time_slot] for item in self.attractions)
+        if len(slots) != len(set(slots)) or slots != tuple(sorted(slots)):
+            raise ValueError("景点时段不得重复且必须按上午、下午、傍晚顺序排列")
+        return self
+
+
 class WeatherPlanData(StrictModel):
     """天气 Agent 的规划结果。"""
 
@@ -171,7 +212,24 @@ class RoutePlanData(StrictModel):
     destination: NonEmptyText
     round_trip: RouteEstimate | None = None
     daily_areas: tuple[DailyArea, ...] = Field(min_length=1)
+    daily_itineraries: tuple[DailyItinerary, ...] = Field(min_length=1)
     weather_adjusted: bool
+
+    @model_validator(mode="after")
+    def validate_daily_day_contract(self) -> "RoutePlanData":
+        """校验每日区域与详细行程的日期集合、唯一性和顺序。"""
+
+        area_days = tuple(item.day for item in self.daily_areas)
+        itinerary_days = tuple(item.day for item in self.daily_itineraries)
+        if (
+            len(area_days) != len(set(area_days))
+            or len(itinerary_days) != len(set(itinerary_days))
+            or area_days != tuple(sorted(area_days))
+            or itinerary_days != tuple(sorted(itinerary_days))
+            or set(area_days) != set(itinerary_days)
+        ):
+            raise ValueError("每日区域与行程的 day 必须集合一致、唯一且按升序排列")
+        return self
 
 
 class LodgingCandidate(StrictModel):
@@ -209,7 +267,8 @@ class DailyFoodPlan(StrictModel):
 
     day: int = Field(ge=1)
     area: NonEmptyText
-    meal_period: str | None = None
+    meal_period: Literal["午餐", "晚餐"] | None = None
+    nearby_attraction_name: NonEmptyText | None = None
     candidates: tuple[FoodCandidate, ...] = ()
     filter_suggestions: tuple[NonEmptyText, ...] = ()
 
@@ -263,6 +322,12 @@ class AgentResult(StrictModel, Generic[ResultData]):
                 raise ValueError("degraded 结果必须含数据及缺失字段或错误")
         elif self.data is not None or not self.missing_fields or self.error is None:
             raise ValueError("failed 结果不得含数据且必须含缺失字段和错误")
+        if self.status is AgentStatus.success and isinstance(self.data, RoutePlanData):
+            if any(
+                not itinerary.attractions or itinerary.missing_fields
+                for itinerary in self.data.daily_itineraries
+            ):
+                raise ValueError("success 路线结果的每日行程必须包含景点且不得有缺失字段")
         if self.trace_id != self.request_id:
             raise ValueError("trace_id 必须与 request_id 一致")
         return self

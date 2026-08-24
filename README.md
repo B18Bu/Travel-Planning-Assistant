@@ -1,6 +1,6 @@
 # 智能文旅策划助手
 
-面向企业内部旅行规划场景的只读式行程建议服务。系统将天气、地图路线、住宿区域、餐饮 POI 汇聚为可追溯的结构化结果，并在同源前端渲染为可核验的 Markdown 行程。
+面向企业内部旅行规划场景的只读式行程建议服务。系统将天气、地图路线、住宿区域、餐饮 POI 汇聚为可追溯的结构化结果，并在同源前端渲染为包含时段、提醒和午晚餐建议的可核验 Markdown 行程。
 
 > 当前版本是 MVP：只提供建议与核验提示，不执行预订、支付或任何交易。
 
@@ -84,9 +84,9 @@
 | `backend/app/services/heweather.py` | 调用和风天气逐日预报并规范化天气字段 | 地点编码、日期、天数 → `DailyWeather` 来源结果 |
 | `backend/app/services/amap.py` | 调用高德地理编码、驾车路线和文本 POI 并规范化字段 | 地点/坐标/关键词 → 地点、路线、POI |
 | `backend/app/agents/weather.py` | 根据天气生成风险等级、活动约束和天气结果 | 请求 + 天气客户端 → 天气 Agent 结果 |
-| `backend/app/agents/route.py` | 根据起终点和天气约束生成每日活动区域、驾车估算 | 请求 + 天气约束 → 路线 Agent 结果 |
-| `backend/app/agents/lodging.py` | 按推荐区域查询住宿服务 POI，只输出位置和筛选建议 | 请求 + 每日区域 → 住宿 Agent 结果 |
-| `backend/app/agents/food.py` | 按每日区域查询餐饮服务 POI，保留无结果日期 | 请求 + 每日区域 → 餐饮 Agent 结果 |
+| `backend/app/agents/route.py` | 按天气风险选择风景名胜或室内文化场所，生成上午、下午、傍晚景区行程、约 120 分钟建议时长和景区间驾车预估 | 请求 + 天气结果 → 路线 Agent 结果 |
+| `backend/app/agents/lodging.py` | 按推荐活动区域查询住宿服务 POI，只输出位置和筛选建议 | 请求 + 每日区域 → 住宿 Agent 结果 |
+| `backend/app/agents/food.py` | 按上午景区提供午餐、按傍晚景区（缺失时回退下午景区）提供晚餐，并查询景区附近餐饮 POI；保留无结果日期 | 请求 + 每日景区行程 → 餐饮 Agent 结果 |
 | `backend/app/agents/summary.py` | 聚合四个结果，去重来源、拼接警告、确定顶层状态并生成 Markdown | 四个 Agent 结果 → 最终文档 |
 | `backend/app/orchestration/sequential.py` | 固定天气 → 路线 → 住宿 → 餐饮 → 汇总顺序；单个 Agent 异常转为受控失败 | 请求 → 最终文档 |
 | `frontend/app.js` | 校验表单、调用相对路径 API、显示用户可读错误和净化 Markdown | 表单 → 页面结果 |
@@ -97,18 +97,20 @@
 
 ### 和风天气：逐日预报
 
-- 固定服务域名：`https://devapi.qweather.com`。
+- 固定服务域名：`https://pb5ctx5qqr.re.qweatherapi.com`。
 - 端点：`GET /v7/weather/3d`。
-- 服务端参数：`location=<高德 adcode>`、`key=<HEWEATHER_API_KEY>`。
+- 服务端参数：`location=<高德地理编码返回的经纬度>`、`key=<HEWEATHER_API_KEY>`；不使用高德 `adcode`。
 - 客户端按请求日期过滤并最多使用 3 日逐日预报，保留供应商确实提供的 `updateTime` 作为 `source_updated_at`。
 
 ### 高德地图：地理编码、驾车路线和 POI
 
 - 固定服务域名：`https://restapi.amap.com`。
 - 地理编码端点：`GET /v3/geocode/geo`，参数 `address=<地点>`、`key=<AMAP_API_KEY>`。
-- 驾车路线端点：`GET /v5/direction/driving`，参数 `origin=<起点经纬度>`、`destination=<终点经纬度>`、`key=<AMAP_API_KEY>`。返回值只映射为距离和时长估算，不代表实时路况或到达保证。
+- 驾车路线端点：`GET /v3/direction/driving`，参数 `origin=<起点经纬度>`、`destination=<终点经纬度>`、`key=<AMAP_API_KEY>`。返回值只映射为距离和时长估算，不代表实时路况或到达保证。
 - POI 文本搜索端点：`GET /v5/place/text`，参数 `keywords=<住宿服务或餐饮服务>`、`region=<城市或区域>`、`city_limit=true`、`key=<AMAP_API_KEY>`。`region` 限定搜索区域，`city_limit=true` 禁止跨城扩散。
-- 供应商原始字段不会透传到 API 响应；POI 仅保留名称、地址、经纬度、类别和内部来源标识。
+- 附近 POI 端点：`GET /v5/place/around`，参数 `keywords=餐饮服务`、`location=<景区经纬度>`、`radius=2000`、`key=<AMAP_API_KEY>`。餐饮 Agent 仅在景区坐标为非空字符串时调用，半径由后端固定为 2000 米。
+- Route Agent 常规天气查询 `风景名胜`；高风险天气优先查询 `博物馆`、`美术馆`、`展馆`，并在行程中标注室内文化场所提醒。每日按上午、下午、傍晚安排，单个景区建议约 120 分钟；候选不足或景区间驾车预估不可用时明确列出待补字段并降级，不复用候选或伪造结果。
+- 供应商原始字段不会透传到 API 响应；POI 仅保留名称、地址、经纬度、类别和内部来源标识。餐饮展示真实名称和地址，不展示评分、推荐指数或招牌菜。
 
 ## 数据合同与安全边界
 
@@ -152,7 +154,7 @@ Agent 状态只有以下 4 种：
 | `APP_ENV` | 运行环境名称 | — | `development` |
 | `ALLOWED_ORIGINS` | CORS 允许的浏览器来源列表 | URL 列表 | `["http://localhost:5173"]` |
 | `HEWEATHER_API_KEY` | 和风天气服务端密钥 | — | 空 |
-| `HEWEATHER_BASE_URL` | 和风天气固定域名 | URL | `https://devapi.qweather.com` |
+| `HEWEATHER_BASE_URL` | 和风天气固定域名 | URL | `https://pb5ctx5qqr.re.qweatherapi.com` |
 | `AMAP_API_KEY` | 高德地图服务端密钥 | — | 空 |
 | `AMAP_BASE_URL` | 高德地图固定域名 | URL | `https://restapi.amap.com` |
 | `EXTERNAL_CONNECT_TIMEOUT_SECONDS` | 外部 HTTP 建连超时 | 秒 | `3.0` |
@@ -165,6 +167,16 @@ Agent 状态只有以下 4 种：
 | `AMAP_GEOCODE_CACHE_TTL_SECONDS` | 高德地理编码缓存 TTL | 秒 | `604800` |
 | `AMAP_ROUTE_CACHE_TTL_SECONDS` | 高德驾车路线缓存 TTL | 秒 | `900` |
 | `AMAP_POI_CACHE_TTL_SECONDS` | 高德 POI 搜索缓存 TTL | 秒 | `3600` |
+| `MINERU_API_KEY` | MinerU PDF 解析服务端密钥 | — | 空 |
+| `MINERU_BASE_URL` | MinerU 固定服务地址 | URL | `https://mineru.net` |
+| `QWEN_VL_API_KEY` | Qwen-VL 图表 OCR 服务端密钥 | — | 空 |
+| `QWEN_VL_BASE_URL` | Qwen-VL 固定服务地址 | URL | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `QWEN_VL_MODEL` | Qwen-VL 图表 OCR 模型 | — | `qwen-vl-max` |
+| `BGE_MODEL_PATH` | 本地 BGE embedding 模型目录 | 路径 | `D:\作业\model\bge-small-zh-v1.5` |
+| `DOCUMENT_DATA_DIR` | 文档原文件、解析产物与索引目录 | 路径 | `backend/data` |
+| `CHROMA_COLLECTION_NAME` | Chroma 文档集合名称 | — | `travel_documents` |
+| `DOCUMENT_MAX_UPLOAD_BYTES` | 单份文档最大上传大小 | 字节 | `20971520` |
+| `DOCUMENT_BATCH_MAX_FILES` | 单次批量上传最大文件数 | 份 | `10`（范围 1—20） |
 
 所有变量仅由后端控制，客户端不能覆盖。密钥默认空值；缺少任一外部密钥时，`/api/ready` 返回 HTTP `503`，但 `/api/health` 仍可用于进程存活检查。
 
@@ -257,13 +269,21 @@ HTTP `200` 返回结构化文档。下面是 API 合同的精简 JSON 形状；�
 }
 ```
 
-页面不展示 JSON 源码。浏览器读取响应后只展示 Markdown 正文、待核验事项、来源更新时间和降级说明；结构化 JSON 仅作为 API 消费者和测试使用。
+页面不展示 JSON 源码。浏览器读取响应后只展示 Markdown 正文、待核验事项、来源更新时间和降级说明；结构化 JSON 仅作为 API 消费者和测试使用。Markdown 行程包含每日天气提醒、上午/下午/傍晚景区与建议时长、景区间驾车预估，以及按时段关联的午餐和晚餐餐饮名称、地址。晚餐优先使用傍晚景区，缺失时回退下午景区；餐饮营业安排仍需以商家官方信息核验。
 
 #### 错误响应
 
 - HTTP `422`：请求体不符合 Pydantic 合同，例如缺少 `destination`、人数不在 1—20 或日期早于今天。浏览器显示「请求参数不符合要求」或服务端提供的可读摘要。
 - HTTP `500`：编排或服务端发生未预期错误。浏览器显示「旅行规划暂时不可用」，不展示异常堆栈或供应商原始响应。
 - HTTP `503`：`GET /api/ready` 在外部密钥缺失时返回「外部数据服务尚未配置」。
+
+### 文档库上传
+
+文档库仅接受 MIME 类型和文件后缀一致、且文件签名有效的 PDF 与 DOCX。单文件接口保持为 `POST /api/documents`，成功时返回 HTTP `202` 与一份 `DocumentRecord`；其既有错误合同不变。
+
+批量上传使用 `POST /api/documents/batch`，请求采用 multipart，并以重复的 `files` 字段按选择顺序提交。默认最多 10 份，后端可通过 `DOCUMENT_BATCH_MAX_FILES` 设置为 1—20。响应中的每项仅包含 1-based `index`、`accepted` / `rejected` / `unavailable` 状态，以及接受项的 `DocumentRecord` 或其他项的受控错误摘要；`accepted` 项会按既有 `DocumentRecord` 合同返回文件名，`rejected` / `unavailable` 项绝不回显不可信文件名、文件路径或异常详情。任一文件被接受时外层返回 `202`；全部校验失败返回 `422`；没有接受项且存在合法文件因处理器或存储不可用而无法接收时返回 `503`。未通过的文件不会入库或进入后台处理队列。
+
+文档处理依赖本地 BGE 模型、Chroma、`python-docx`、MinerU、Qwen-VL 和 PyMuPDF。当前 PDF 始终在本地由 PyMuPDF 提取；MinerU 配置保留给后续受控外发解析接入，当前处理链路不会调用它。PyMuPDF 只能从 PDF 中提取可访问的文本与基础结构，不能保证扫描件 OCR、复杂版面、图表或表格的完整还原；此类内容需人工核验，后续接入受控 MinerU/Qwen-VL 后再按实际能力处理。
 
 ### 健康检查
 
@@ -280,7 +300,15 @@ HTTP `200` 返回结构化文档。下面是 API 合同的精简 JSON 形状；�
 
 ## 缓存、重试与熔断
 
-这是当前 MVP 的进程内行为，不是分布式缓存或全局流量治理：
+这是当前 MVP 的进程内行为，不是分布式缓存或全局流量治理。当前已知限制包括：和风天气仅支持 3 日预报窗口；多日外部调用按顺序执行，暂未实现 Route 总 deadline；附近 POI 仅按非空坐标字符串调用，未做本地经纬度格式校验；生产化治理尚未实现；天气日期连续性和来源元数据异常容错仍待加强。这些事项不能视为已解决：
+
+- 和风天气 3 日窗口之外的日期可能没有匹配的逐日预报。
+- 多日外部调用按顺序执行，当前暂无 Route 总 deadline。
+- 附近 POI 仅检查坐标字符串非空，未做本地经纬度格式校验。
+- 认证、限流、租户隔离、集中式密钥管理、审计和监控等生产化治理尚未实现。
+- 天气日期连续性校验、来源元数据异常容错仍是待加强项。
+
+当前 MVP 的缓存、重试和熔断行为如下：
 
 1. 天气、地理编码、驾车路线和 POI 分别使用对应 TTL 的内存缓存；命中缓存时返回 `data_status=cached`，并刷新 `retrieved_at`。
 2. 首次上游请求返回 `data_status=realtime`；供应商的真实更新时间才写入 `source_updated_at`。
@@ -297,7 +325,7 @@ $env:PYTHONPATH = "$PWD\backend"
 python -m pytest -c backend/pytest.ini backend/tests -v
 ```
 
-本次在当前工作树实际运行结果为 `573 passed`（其中新增文档测试为 5 项）。其余测试覆盖模型、配置、供应商客户端、韧性、四类 Agent、汇总、编排、API 和前端资源。提交前必须至少通过：
+测试数量和结果随当前工作树变化，以当前完整测试命令实际结果为准。测试覆盖模型、配置、供应商客户端、韧性、四类 Agent、汇总、编排、API 和前端资源。提交前必须至少通过：
 
 ```powershell
 python -m pytest -c backend/pytest.ini backend/tests/test_docs.py -q
@@ -312,7 +340,7 @@ git diff --check
 | 页面打不开或根路径 `404` | 确认从仓库根目录启动，`frontend/index.html` 存在；不要把 `--app-dir` 指向 `frontend`。 |
 | 启动时报 `ModuleNotFoundError: app` | 在当前 PowerShell 会话设置 `$env:PYTHONPATH = "$PWD\backend"`，或按示例使用 `--app-dir backend`。 |
 | `/api/health` 正常、`/api/ready` 返回 `503` | 检查 `backend/.env` 是否包含非空 `HEWEATHER_API_KEY` 和 `AMAP_API_KEY`；密钥不写进代码或 README。 |
-| 规划返回 `degraded` | 查看页面「待核验事项」和「降级说明」；确认上游网络、密钥、配额和熔断状态，不能把降级当作实时保证。 |
+| 规划返回 `degraded` | 查看页面「待核验事项」和「降级说明」；确认上游网络、密钥、配额和熔断状态，不能把降级当作实时保证。天气超出和风 3 日窗口、景区候选不足、景区坐标缺失或附近餐饮无结果时，均应接受相应降级提示。 |
 | 规划返回 `422` | 对照请求合同检查地点、日期、人数、天数、预算和偏好；未知字段会被拒绝。 |
 | 规划返回 `500` | 查看服务端受控日志中的请求标识，检查编排器和配置；客户端不会收到原始堆栈。 |
 | 外部请求反复失败 | 先检查固定域名是否可达、系统时间和供应商配额，再等待熔断窗口结束；不要通过客户端覆盖 `*_BASE_URL`。 |
@@ -331,7 +359,7 @@ git diff --check
 - 为相同请求增加 single-flight，避免缓存未命中时并发击穿上游。
 - 使用可观测的异步 HTTP 连接池，复用连接并明确连接生命周期。
 - 实现有上限、可观测的缓存淘汰策略，避免进程内缓存无限增长。
-- 统一请求级超时预算，让天气、路线、住宿、餐饮和汇总共享剩余时间，而不是各自独立等待。
+- 统一请求级超时预算，让天气、路线、住宿、餐饮和汇总共享剩余时间，而不是各自独立等待；当前多日外部调用按顺序执行，暂未实现 Route 总 deadline。
 - 增加限流、认证、租户隔离和配额控制；生产 CORS 只允许明确的前端来源。
 - 增加结构化审计日志、密钥轮换、供应商调用指标、脱敏追踪和告警。
 - 在不改变当前非交易边界的前提下，为未来知识库或 OTA 评审独立的数据合同、授权范围和安全审查；本轮不接知识库、OTA 或交易。

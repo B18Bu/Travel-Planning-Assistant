@@ -147,6 +147,111 @@ def test_frontend_makes_api_failures_visible_without_serializing_response_json()
     assert "FORBID_ATTR" in app_js
 
 
+def test_document_library_adds_only_approved_navigation_and_search_scope_ui():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    for marker in (
+        'id="nav-library"',
+        "showView('library')",
+        'id="view-library"',
+        'id="document-upload"',
+        'id="document-upload" type="file" accept=".docx,.pdf,application/pdf" multiple',
+        'id="library-status"',
+        'id="library-list"',
+        'id="library-detail"',
+        "检索范围：全部已处理文档",
+        'id="knowledge-results"',
+    ):
+        assert marker in html
+
+    for marker in (
+        "async function loadDocuments(isPolling = false, preserveStatus = false)",
+        "if (!preserveStatus) setLibraryStatus",
+        "文档库服务不可用：${documentErrorMessage(requestError, \"请稍后重试。\")}",
+        'fetch("/api/documents")',
+        'formData.append("files", file)',
+        'fetch("/api/documents/batch", { method: "POST", body: formData })',
+        "result.index",
+        "file.name",
+        "summaries.join(\"\\n\")",
+        "documentUpload.value = \"\"",
+        "if (!Array.isArray(payload.items))",
+        "cancelDocumentPolling();",
+        "await loadDocuments(false, true)",
+        'fetch(`/api/documents/${documentId}`, { method: "DELETE" })',
+        'fetch("/api/knowledge-search"',
+        "textContent",
+        "documentPollAttempts < 30",
+        "2000",
+        "let documentRequestGeneration = 0",
+        "function cancelDocumentPolling()",
+        "window.clearTimeout(documentPollTimer)",
+        "const generation = ++documentRequestGeneration",
+        "if (generation !== documentRequestGeneration || activeView !== \"library\") return;",
+        "if (name !== \"library\") cancelLibraryRequests();",
+        "const locations = [",
+        "locations.join(\" · \")",
+        "source.table ? `表 ${source.table}` : \"\"",
+        'source.document_name || "未知来源"',
+    ):
+        assert marker in script
+
+    load_documents_start = script.index("async function loadDocuments")
+    upload_document_start = script.index("async function uploadDocument")
+    load_documents = script[load_documents_start:upload_document_start]
+    assert "documents = [];" not in load_documents
+    assert "renderDocuments();" not in load_documents[load_documents.index("catch (requestError)"):]
+
+    for selector in (
+        ".library-head",
+        ".library-list",
+        ".library-card",
+        ".library-upload",
+        ".library-chunk",
+        ".knowledge-results",
+        ".knowledge-result",
+        ".search-scope",
+    ):
+        assert selector in styles
+
+    # 不可变首页布局基线：文档库不得改动双栏比例或既有关键卡片尺寸。
+    assert "grid-template-columns: minmax(0, 1.08fr) 1px minmax(0, .92fr)" in styles
+    assert ".travel-window {\n    position: relative; height: 210px;" in styles
+    assert ".digital-human-card { min-height: 220px;" in styles
+    assert ".digital-human-card, .search-card {\n    background: linear-gradient(180deg, #ffffff, #f8fbff); border: 1px solid var(--border); border-radius: 18px;\n    padding: 22px;" in styles
+    assert ".search-card .knowledge-results" not in styles
+    assert ".search-card .search-scope" not in styles
+
+    # 检索提示与结果必须是搜索卡的独立同级区域，不能撑高既有搜索卡。
+    search_card_start = html.index('<div class="search-card">')
+    knowledge_panel_start = html.index('<section class="knowledge-panel">', search_card_start)
+    search_card_html = html[search_card_start:knowledge_panel_start]
+    assert "knowledge-results" not in search_card_html
+    assert "search-scope" not in search_card_html
+    assert 'class="knowledge-panel"' in html
+
+
+def test_frontend_prevents_stale_document_detail_and_knowledge_search_renders():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "let documentDetailGeneration = 0" in script
+    assert "let knowledgeRequestGeneration = 0" in script
+    assert "const generation = ++documentDetailGeneration" in script
+    assert "const generation = ++knowledgeRequestGeneration" in script
+    assert "generation !== documentDetailGeneration || activeView !== \"library\"" in script
+    assert "generation !== knowledgeRequestGeneration || activeView !== \"home\"" in script
+    assert "let activeDocumentDetailId = null" in script
+    assert "function cancelLibraryRequests()" in script
+    assert 'if (name !== "library") cancelLibraryRequests();' in script
+    assert 'if (activeView === "library") cancelLibraryRequests();' in script
+    assert 'if (documentId === activeDocumentDetailId)' in script
+    assert 'activeDocumentDetailId !== documentData.id' in script
+    assert 'activeDocumentDetailId = null;' in script
+    assert 'activeView = "intro";' in script
+
+
 def test_frontend_has_two_column_desktop_and_single_column_narrow_layout():
     styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
 
@@ -174,7 +279,7 @@ def test_frontend_safely_displays_non_2xx_details_without_raw_serialization():
     assert "请求参数不符合要求" in app_js
     assert "response.status" in app_js
     assert "textContent" in app_js
-    assert "JSON.stringify" not in app_js.replace("JSON.stringify(body)", "")
+    assert "JSON.stringify" not in app_js.replace("JSON.stringify(body)", "").replace("JSON.stringify({ query, document_ids: [] })", "").replace("JSON.stringify({ query: task.query, document_ids: [], generate_markdown: true, record_id: task.id })", "").replace("JSON.stringify({ rating })", "")
     assert "response.text()" not in app_js
 
 
@@ -188,6 +293,221 @@ def test_frontend_distinguishes_failed_documents_and_rejects_past_dates():
     assert "departure_date" in app_js
     assert "new Date" in app_js
     assert "出行日期不得早于今天" in app_js
+
+
+def test_frontend_answers_markdown_via_modal_and_persists_knowledge_records():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    for marker in (
+        'id="answer-mask"',
+        'id="answer-query-note"',
+        'id="answer-content"',
+        "closeAnswerModal",
+        'id="records-mask"',
+        'id="records-list"',
+        "openRecordsModal",
+        "管理记录 →",
+    ):
+        assert marker in html
+
+    for marker in (
+        "openAnswerModal",
+        "closeAnswerModal",
+        "generate_markdown",
+        "answer_status",
+        "answer-markdown",
+        'fetch("/api/knowledge-records"',
+        "loadKnowledgeRecords",
+        "addKnowledgeTask",
+        "deleteKnowledgeRecord",
+        "clearKnowledgeRecords",
+        "matched_by",
+        "查看完整回答",
+        "生成完整回答",
+        "generateAnswer",
+        "openRecordsModal",
+        "closeRecordsModal",
+        "deleteRecordFromManage",
+        "tasks.slice(-3)",
+        "record_id",
+    ):
+        assert marker in script
+
+    for selector in (
+        ".modal-answer",
+        ".answer-markdown",
+        ".answer-open-btn",
+        ".answer-hint",
+        ".match-badge",
+        ".modal-records",
+        ".records-list",
+        ".record-manage-item",
+    ):
+        assert selector in styles
+
+
+def test_frontend_restores_rating_feedback_and_real_dashboard_stats():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    for marker in (
+        'id="dash-total"',
+        'id="dash-good"',
+        'id="dash-ai"',
+        'id="dash-by-region"',
+        'id="dash-by-document"',
+        'id="bar-kb-fill"',
+        'id="bar-ai-val"',
+    ):
+        assert marker in html
+
+    for marker in (
+        "renderFeedback",
+        "submitFeedback",
+        "knowledge-feedback",
+        'fetch(`/api/knowledge-records/${task.id}/rating`',
+        "loadDashboardStats",
+        "renderStatsRows",
+        "setStatNumber",
+        "setBar",
+        'fetch("/api/knowledge-stats"',
+        "这个结果对你有帮助吗？",
+        "renderFeedback(record, answerContent)",
+        "record-manage-preview",
+    ):
+        assert marker in script
+
+    for selector in (
+        ".knowledge-feedback",
+        ".feedback-label",
+        ".record-manage-preview",
+    ):
+        assert selector in styles
+
+
+def test_frontend_shows_travel_plan_result_in_independent_modal():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    for marker in (
+        'id="travel-mask"',
+        'id="travel-title"',
+        'id="travel-content"',
+        "closeTravelModal",
+    ):
+        assert marker in html
+
+    for marker in (
+        "travelMask",
+        "travelTitle",
+        "travelContent",
+        "travelMask.classList.add(\"show\")",
+        "closeTravelModal",
+        "proc-steps",
+    ):
+        assert marker in script
+
+
+def test_document_detail_sits_above_document_list_and_scrolls_to_top():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    detail_index = html.index('id="library-detail"')
+    list_index = html.index('id="library-list"')
+    assert detail_index < list_index
+    assert "main.scrollTo" in script
+
+
+def test_knowledge_results_collapse_full_content_by_default():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    for marker in (
+        "knowledge-detail-btn",
+        "查看详情 ▾",
+        "收起 ▴",
+        "content.hidden = true",
+        "knowledge-result-header",
+        "knowledge-result-content",
+    ):
+        assert marker in script
+
+    for selector in (
+        ".knowledge-result-header",
+        ".knowledge-result-meta",
+        ".knowledge-result-content",
+        ".knowledge-detail-btn",
+    ):
+        assert selector in styles
+
+
+def test_scroll_is_contained_to_inner_containers_with_adaptive_height():
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert ".main {" in styles
+    assert "overscroll-behavior: contain" in styles
+    assert ".knowledge-results {" in styles
+    assert "max-height: 62vh" in styles
+    assert "overflow-y: auto" in styles
+    # 应用容器必须为固定视口高度（非 min-height），否则内容会撑高整页
+    app_block_start = styles.index(".app {")
+    app_block_end = styles.index("}", app_block_start)
+    app_block = styles[app_block_start:app_block_end]
+    assert "height: 100dvh" in app_block
+    assert "height: 100vh" in app_block
+    assert "min-height: 100dvh" not in app_block
+    # 首页自适应视口，结果区 flex 填充并在内部滚动
+    home_block_start = styles.index(".home {")
+    home_block_end = styles.index("}", home_block_start)
+    home_block = styles[home_block_start:home_block_end]
+    assert "height: 100%" in home_block
+    assert "overflow: hidden" in home_block
+    knowledge_block_start = styles.index(".knowledge-results {")
+    knowledge_block_end = styles.index("}", knowledge_block_start)
+    knowledge_block = styles[knowledge_block_start:knowledge_block_end]
+    assert "overflow-y: auto" in knowledge_block
+    assert "flex: 1" in knowledge_block
+
+
+def test_sidebar_knowledge_foot_loads_real_document_stats():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    for marker in (
+        'id="kb-summary"',
+        'id="kb-last-index"',
+    ):
+        assert marker in html
+
+    for marker in (
+        "updateKnowledgeFoot",
+        "formatIndexTime",
+        "kb-summary",
+        "kb-last-index",
+        "chunk_count",
+        'fetch("/api/documents")',
+    ):
+        assert marker in script
+
+
+def test_workbench_scales_down_to_fit_viewport():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    for marker in (
+        "fitWorkbenchToViewport",
+        "MutationObserver",
+        "requestAnimationFrame",
+        "homeView.style.zoom = String(ratio)",
+        'Math.max(0.55, Math.min(1, available / natural))',
+        "window.addEventListener(\"resize\", fitWorkbenchToViewport)",
+    ):
+        assert marker in script
+
+    assert "#view-home.active { height: 100%; min-height: 0; overflow: hidden; }" in styles
 
 
 @pytest.mark.asyncio

@@ -37,7 +37,7 @@ class WeatherAgent:
         try:
             location = await self.amap_client.geocode(request.destination)
             sources.append(self._source(location, "高德地图", SourceType.map_api))
-            location_id = location["adcode"]
+            location_id = location["location"]
             forecast = await self.weather_client.daily_forecast(
                 location_id, request.departure_date, request.days
             )
@@ -95,13 +95,24 @@ class WeatherAgent:
             if any(word in condition for word in _RISK_WORDS)
             else WeatherRiskLevel.low
         )
+        travel_reminder, indoor_preferred = WeatherAgent._travel_guidance(condition)
         return DailyWeather(
             date=item["date"],
             condition=condition,
             temp_min=item.get("temp_min"),
             temp_max=item.get("temp_max"),
             risk_level=risk_level,
+            travel_reminder=travel_reminder,
+            indoor_preferred=indoor_preferred,
         )
+
+    @staticmethod
+    def _travel_guidance(condition: str) -> tuple[str, bool]:
+        if any(word in condition for word in ("暴雨", "台风", "强对流")):
+            return "减少户外暴露，关注官方预警；当日优先室内文化场所。", True
+        if "高温" in condition:
+            return "防晒补水，避免长时间户外暴晒；当日优先室内文化场所。", True
+        return "关注天气变化，按实际天气调整出游安排。", False
 
     @staticmethod
     def _missing_fields(request_days: int, actual_days: int) -> tuple[str, ...]:
@@ -113,17 +124,17 @@ class WeatherAgent:
     @staticmethod
     def _constraints(daily: tuple[DailyWeather, ...]) -> tuple[str, ...]:
         return tuple(
-            f"第 {index} 天避免长时间户外活动或高温时段优先室内。"
+            f"第 {index} 天：{item.travel_reminder}"
             for index, item in enumerate(daily, 1)
-            if item.risk_level is WeatherRiskLevel.high
+            if item.indoor_preferred
         )
 
     @staticmethod
     def _warnings(daily: tuple[DailyWeather, ...]) -> tuple[str, ...]:
         return tuple(
-            f"第 {index} 天预报为{item.condition}，请关注官方预警。"
+            f"第 {index} 天预报为{item.condition}：{item.travel_reminder}"
             for index, item in enumerate(daily, 1)
-            if item.risk_level is WeatherRiskLevel.high
+            if item.indoor_preferred
         )
 
     @staticmethod

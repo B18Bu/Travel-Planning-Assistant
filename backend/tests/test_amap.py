@@ -21,7 +21,7 @@ def client(**kwargs):
 @pytest.mark.asyncio
 async def test_maps_fixed_endpoints_and_allowed_fields():
     geo = respx.get(f"{BASE}/v3/geocode/geo").mock(return_value=httpx.Response(200, json={"status": "1", "geocodes": [{"formatted_address": "成都市", "location": "104.06,30.57", "adcode": "510100", "private": "discard"}]}))
-    route = respx.get(f"{BASE}/v5/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [{"distance": "1800", "duration": "600", "polyline": "secret"}]}}))
+    route = respx.get(f"{BASE}/v3/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [{"distance": "1800", "duration": "600", "polyline": "secret"}]}}))
     poi = respx.get(f"{BASE}/v5/place/text").mock(return_value=httpx.Response(200, json={"status": "1", "pois": [{"name": "示例酒店", "address": "示例路 1 号", "location": "104.08,30.57", "type": "住宿服务", "photos": "discard"}]}))
     amap = client()
     location = await amap.geocode("成都")
@@ -49,7 +49,7 @@ async def test_maps_fixed_endpoints_and_allowed_fields():
 @respx.mock
 @pytest.mark.asyncio
 async def test_route_cache_hit_is_cached():
-    route = respx.get(f"{BASE}/v5/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [{"distance": "100", "duration": "60"}]}}))
+    route = respx.get(f"{BASE}/v3/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [{"distance": "100", "duration": "60"}]}}))
     amap = client()
     first = await amap.driving_route("a", "b")
     second = await amap.driving_route("a", "b")
@@ -202,7 +202,7 @@ async def test_status_empty_results_and_empty_poi_are_controlled_or_valid():
     with pytest.raises(ExternalServiceUnavailable): await client().geocode("成都")
     respx.reset(); respx.get(f"{BASE}/v3/geocode/geo").mock(return_value=httpx.Response(200, json={"status": "1", "geocodes": []}))
     with pytest.raises(ExternalServiceUnavailable, match="未找到地点"): await client().geocode("成都")
-    respx.reset(); respx.get(f"{BASE}/v5/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": []}}))
+    respx.reset(); respx.get(f"{BASE}/v3/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": []}}))
     with pytest.raises(ExternalServiceUnavailable, match="有效路线"): await client().driving_route("a", "b")
     respx.reset(); respx.get(f"{BASE}/v5/place/text").mock(return_value=httpx.Response(200, json={"status": "1", "pois": []}))
     assert await client().search_poi("住宿", "成都") == []
@@ -254,16 +254,16 @@ async def test_geocode_item_non_dict_is_controlled(geocodes):
 @respx.mock
 @pytest.mark.asyncio
 async def test_route_non_dict_is_controlled(route_payload):
-    respx.get(f"{BASE}/v5/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": route_payload}))
+    respx.get(f"{BASE}/v3/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": route_payload}))
     with pytest.raises(ExternalServiceUnavailable, match="有效路线"): await client().driving_route("a", "b")
 
 
 @respx.mock
 @pytest.mark.asyncio
 async def test_route_path_and_number_types_are_controlled():
-    respx.get(f"{BASE}/v5/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [None]}}))
+    respx.get(f"{BASE}/v3/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [None]}}))
     with pytest.raises(ExternalServiceUnavailable, match="有效路线"): await client().driving_route("a", "b")
-    respx.reset(); respx.get(f"{BASE}/v5/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [{"distance": "坏", "duration": "1"}]}}))
+    respx.reset(); respx.get(f"{BASE}/v3/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [{"distance": "坏", "duration": "1"}]}}))
     with pytest.raises(ExternalServiceUnavailable, match="有效路线"): await client().driving_route("a", "b")
 
 
@@ -310,7 +310,7 @@ async def test_amap_geocode_fields_must_be_string_or_none(field, value):
 async def test_amap_route_numbers_must_be_strict_integer(field, value):
     path = {"distance": "100", "duration": "60"}
     path[field] = value
-    respx.get(f"{BASE}/v5/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [path]}}))
+    respx.get(f"{BASE}/v3/direction/driving").mock(return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [path]}}))
     amap = client()
     with pytest.raises(ExternalServiceUnavailable, match="有效路线"):
         await amap.driving_route("a", "b")
@@ -383,7 +383,7 @@ async def test_amap_unknown_path_is_controlled_and_not_cached():
 async def test_amap_route_negative_measurements_are_controlled(field):
     path = {"distance": "100", "duration": "60"}
     path[field] = -1
-    respx.get(f"{BASE}/v5/direction/driving").mock(
+    respx.get(f"{BASE}/v3/direction/driving").mock(
         return_value=httpx.Response(200, json={"status": "1", "route": {"paths": [path]}})
     )
     amap = client()
@@ -391,4 +391,63 @@ async def test_amap_route_negative_measurements_are_controlled(field):
     with pytest.raises(ExternalServiceUnavailable, match="有效路线"):
         await amap.driving_route("a", "b")
 
+    assert amap.breaker.failure_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_nearby_poi_uses_fixed_endpoint_params_projection_and_cache():
+    route = respx.get(f"{BASE}/v5/place/around").mock(return_value=httpx.Response(200, json={
+        "status": "1",
+        "pois": [{
+            "name": "附近餐厅", "address": "示例路", "location": "104.08,30.57",
+            "type": "餐饮服务", "photos": "private", "tel": "private",
+        }],
+    }))
+    amap = client()
+
+    first = await amap.search_nearby_poi("餐厅", "104.06,30.57", 1000)
+    second = await amap.search_nearby_poi("餐厅", "104.06,30.57", 1000)
+
+    request = route.calls[0].request
+    assert route.call_count == 1
+    assert request.url.path == "/v5/place/around"
+    assert request.url.params["keywords"] == "餐厅"
+    assert request.url.params["location"] == "104.06,30.57"
+    assert request.url.params["radius"] == "1000"
+    assert request.url.params["key"] == "amap-key"
+    assert set(first[0]) == {"name", "address", "location", "category", "data_status", "source_updated_at", "retrieved_at"}
+    assert second[0]["data_status"] == "cached"
+    assert "private" not in repr(first)
+
+
+@pytest.mark.parametrize("radius", [True, False, 0, -1, 1.5, "1000"])
+@pytest.mark.asyncio
+async def test_nearby_poi_rejects_non_positive_strict_integer_radius(radius):
+    cache = MemoryCache()
+
+    with pytest.raises(ExternalServiceUnavailable):
+        await client(cache=cache).search_nearby_poi("餐厅", "104.06,30.57", radius)
+
+    assert cache._entries == {}
+
+
+@pytest.mark.parametrize("keywords,location", [("", "1,2"), ("餐厅", ""), (None, "1,2"), ("餐厅", None)])
+@pytest.mark.asyncio
+async def test_nearby_poi_rejects_empty_text_arguments(keywords, location):
+    with pytest.raises(ExternalServiceUnavailable):
+        await client().search_nearby_poi(keywords, location, 1000)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_nearby_poi_upstream_failure_is_controlled_and_private():
+    route = respx.get(f"{BASE}/v5/place/around").mock(return_value=httpx.Response(503, text="secret upstream payload"))
+    amap = client()
+
+    with pytest.raises(ExternalServiceUnavailable) as error:
+        await amap.search_nearby_poi("餐厅", "104.06,30.57", 1000)
+
+    assert "secret upstream payload" not in str(error.value)
+    assert route.call_count == 3
     assert amap.breaker.failure_count == 1

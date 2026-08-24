@@ -25,13 +25,14 @@ def valid_document(request_id: str) -> TravelPlanDocument:
         agent="weather", status="success", summary="天气完成",
         data=WeatherPlanData(
             destination="杭州",
-            daily=(DailyWeather(date=date(2026, 9, 1), condition="晴", risk_level="low"),),
+            daily=(DailyWeather(date=date(2026, 9, 1), condition="晴", risk_level="low", travel_reminder="天气适宜出行", indoor_preferred=False),),
         ), request_id=request_id, trace_id=request_id,
     )
     route = AgentResult(
         agent="route", status="success", summary="路线完成",
         data=RoutePlanData(
             origin="上海", destination="杭州", daily_areas=(DailyArea(day=1, area="西湖"),),
+            daily_itineraries=({"day": 1, "weather_reminder": "天气适宜出行", "attractions": ({"time_slot": "上午", "poi": {"name": "断桥", "category": "景点", "location": "120,30", "source_ids": ("amap:attraction",)}, "suggested_duration_minutes": 90},)},),
             weather_adjusted=False,
         ), request_id=request_id, trace_id=request_id,
     )
@@ -49,6 +50,20 @@ def valid_document(request_id: str) -> TravelPlanDocument:
         itinerary=TravelPlanData(weather=weather, route=route, lodging=lodging, food=food),
         markdown="# 旅行计划",
     )
+
+
+@pytest.mark.asyncio
+async def test_image_webp_is_served_with_image_mime_type():
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="https://testserver"
+    ) as client:
+        response = await client.get("/image/travel-mountain.webp")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/webp"
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 @pytest.mark.asyncio

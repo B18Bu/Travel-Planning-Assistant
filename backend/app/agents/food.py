@@ -21,7 +21,7 @@ from app.services.resilience import ExternalServiceUnavailable
 
 
 class FoodAgent:
-    """按每日活动区域获取餐饮 POI，并保留无结果日期。"""
+    """按每日景区行程获取午餐和晚餐餐饮 POI。"""
 
     def __init__(self, amap_client: Any) -> None:
         self.amap_client = amap_client
@@ -29,116 +29,139 @@ class FoodAgent:
     async def run(
         self,
         request: TravelPlanRequest,
-        daily_areas: tuple[Any, ...] | list[Any],
+        daily_itineraries: tuple[Any, ...] | list[Any],
         request_id: str,
         trace_id: str,
     ) -> AgentResult[FoodPlanData]:
         self._validate_ids(request_id, trace_id)
-        daily_plans: list[DailyFoodPlan] = []
         sources: list[Source] = []
         missing_fields: list[str] = []
-        if not daily_areas:
-            fallback = DailyFoodPlan(
-                day=1,
-                area=request.destination,
-                meal_period=None,
-                candidates=(),
-                filter_suggestions=("请先补充每日活动区域，再按区域筛选餐饮。",),
+        daily_plans: list[DailyFoodPlan] = []
+
+        if daily_itineraries is not None and not isinstance(daily_itineraries, (tuple, list)):
+            return AgentResult[FoodPlanData](
+                agent="food",
+                status=AgentStatus.degraded,
+                summary="每日景区行程格式无效，餐饮建议受控降级。",
+                data=FoodPlanData(daily_food=tuple(
+                    DailyFoodPlan(day=day, area=request.destination, meal_period=meal_period,
+                                  candidates=(), filter_suggestions=("请核验每日景区行程格式，并以商家官方信息为准。",))
+                    for day in range(1, request.days + 1)
+                    for meal_period in ("午餐", "晚餐")
+                )),
+                warnings=("每日景区行程格式无效，请先核验路线信息。",),
+                missing_fields=("food_daily_itineraries",),
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+
+        if not daily_itineraries:
+            fallback_plans = tuple(
+                DailyFoodPlan(
+                    day=day,
+                    area=request.destination,
+                    meal_period=meal_period,
+                    candidates=(),
+                    filter_suggestions=("请先补充每日景区行程，并以商家官方信息为准。",),
+                )
+                for day in range(1, request.days + 1)
+                for meal_period in ("午餐", "晚餐")
             )
             return AgentResult[FoodPlanData](
                 agent="food",
                 status=AgentStatus.degraded,
-                summary="餐饮活动区域暂不可用。",
-                data=FoodPlanData(daily_food=(fallback,)),
-                warnings=("未获得每日活动区域，请先核验路线区域。",),
-                missing_fields=("food_daily_areas",),
+                summary="每日景区行程暂不可用，餐饮建议受控降级。",
+                data=FoodPlanData(daily_food=fallback_plans),
+                warnings=("未获得每日景区行程，请先核验路线信息。",),
+                missing_fields=tuple(
+                    f"food_day_{day}_{slot}_itinerary"
+                    for day in range(1, request.days + 1)
+                    for slot in ("lunch", "dinner")
+                ),
                 request_id=request_id,
                 trace_id=trace_id,
             )
-        parsed_areas: list[tuple[int, str]] = []
-        duplicate_fields: list[str] = []
-        invalid_fields: list[str] = []
-        for index, daily_area in enumerate(daily_areas, 1):
+
+        parsed: list[tuple[int, Any]] = []
+        for index, itinerary in enumerate(daily_itineraries, 1):
             try:
-                day, area = self._daily_area(daily_area, request.days)
-            except (AttributeError, KeyError, TypeError, ValueError, ValidationError):
-                invalid_fields.append(f"food_day_{index}_area")
+                day = self._value(itinerary, "day")
+                if isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= request.days:
+                    raise ValueError
+            except (AttributeError, KeyError, TypeError, ValueError):
+                missing_fields.append(f"food_day_{index}_itinerary")
                 continue
-            if day in {item[0] for item in parsed_areas}:
-                duplicate_fields.append(f"food_day_{day}_duplicate")
+            if any(existing_day == day for existing_day, _ in parsed):
+                missing_fields.append(f"food_day_{day}_duplicate")
                 continue
-            parsed_areas.append((day, area))
-        parsed_areas.sort(key=lambda item: item[0])
-        out_of_range = set()
-        for daily_area in daily_areas:
-            try:
-                raw_day = daily_area.day if hasattr(daily_area, "day") else daily_area["day"]
-                if isinstance(raw_day, int) and not isinstance(raw_day, bool) and not 1 <= raw_day <= request.days:
-                    out_of_range.add(raw_day)
-            except (AttributeError, KeyError, TypeError):
-                pass
-        invalid_fields.extend(f"food_day_{day}_out_of_range" for day in sorted(out_of_range))
-        missing_fields.extend(duplicate_fields)
-        missing_fields.extend(invalid_fields)
-        for index, (day, area) in enumerate(parsed_areas, 1):
-            try:
-                raw_pois = await self.amap_client.search_poi("餐饮服务", area)
-                if not isinstance(raw_pois, list):
-                    raise ValueError("POI 响应格式无效")
-                limited_pois = raw_pois[:10]
-                candidates = tuple(
-                    FoodCandidate(poi=self._poi(item, "amap:food", "餐饮服务"))
-                    for item in limited_pois
-                )
-                self._append_sources(sources, limited_pois)
-            except (ExternalServiceUnavailable, KeyError, TypeError, ValueError, ValidationError):
-                candidates = ()
-            suggestions = () if candidates else ("请按营业时段、菜系与活动区域筛选，并以商家官方信息为准。",)
-            if not candidates:
-                missing_fields.append(f"food_day_{day}_candidates")
-            try:
-                daily_plans.append(
-                    DailyFoodPlan(
-                        day=day,
-                        area=area,
-                        meal_period=None,
-                        candidates=candidates,
-                        filter_suggestions=suggestions,
-                    )
-                )
-            except (TypeError, ValueError, ValidationError):
-                missing_fields.append(f"food_day_{day}_area")
-        expected_days = request.days
-        existing_days = {item.day for item in daily_plans}
+            parsed.append((day, itinerary))
+        parsed.sort(key=lambda item: item[0])
+        present_days = {day for day, _ in parsed}
+        missing_days = set(range(1, request.days + 1)) - present_days
         missing_fields.extend(
-            f"food_day_{day}_area"
-            for day in range(1, expected_days + 1)
-            if day not in existing_days
+            f"food_day_{day}_itinerary"
+            for day in sorted(missing_days)
         )
+
+        for day in sorted(missing_days):
+            for meal_period, slot_name in (("午餐", "lunch"), ("晚餐", "dinner")):
+                daily_plans.append(DailyFoodPlan(
+                    day=day,
+                    area=request.destination,
+                    meal_period=meal_period,
+                    candidates=(),
+                    filter_suggestions=("请补充该日路线，并以商家官方信息为准。",),
+                ))
+                missing_fields.append(f"food_day_{day}_{slot_name}_itinerary")
+
+        for day, itinerary in parsed:
+            attractions = self._value(itinerary, "attractions", ())
+            if not isinstance(attractions, (tuple, list)):
+                attractions = ()
+            by_slot = {}
+            for attraction in attractions:
+                try:
+                    slot = self._value(attraction, "time_slot")
+                    if slot in {"上午", "下午", "傍晚"} and slot not in by_slot:
+                        by_slot[slot] = attraction
+                except (AttributeError, KeyError, TypeError):
+                    continue
+            lunch_attraction = by_slot.get("上午")
+            dinner_attraction = by_slot.get("傍晚") or by_slot.get("下午")
+            for meal_period, slot_name, attraction in (
+                ("午餐", "lunch", lunch_attraction),
+                ("晚餐", "dinner", dinner_attraction),
+            ):
+                plan, fields = await self._plan_meal(
+                    request, day, meal_period, slot_name, attraction, sources
+                )
+                daily_plans.append(plan)
+                missing_fields.extend(fields)
+
+        daily_plans.sort(key=lambda plan: (plan.day, 0 if plan.meal_period == "午餐" else 1))
         if not daily_plans:
-            fallback_area = "未知区域" if daily_areas else request.destination
-            fallback = DailyFoodPlan(
-                day=1,
-                area=fallback_area,
-                meal_period=None,
-                candidates=(),
-                filter_suggestions=("请先补充有效每日活动区域，再按区域筛选餐饮。",),
+            daily_plans.append(
+                DailyFoodPlan(
+                    day=1,
+                    area=request.destination,
+                    meal_period="午餐",
+                    candidates=(),
+                    filter_suggestions=("请先补充有效每日景区行程，并以商家官方信息为准。",),
+                )
             )
-            daily_plans.append(fallback)
-            if "food_daily_areas" not in missing_fields:
-                missing_fields.append("food_daily_areas")
         data = FoodPlanData(daily_food=tuple(daily_plans))
-        has_candidates = any(item.candidates for item in daily_plans)
-        if not daily_plans or not has_candidates:
-            status = AgentStatus.degraded
-        elif missing_fields:
-            status = AgentStatus.partial
-        else:
-            status = AgentStatus.success
-        return AgentResult[FoodPlanData](
+        has_candidates = any(plan.candidates for plan in daily_plans)
+        status = (
+            AgentStatus.degraded
+            if not has_candidates
+            else AgentStatus.partial
+            if missing_fields
+            else AgentStatus.success
+        )
+        return AgentResult(
             agent="food",
             status=status,
-            summary="已按每日活动区域提供餐饮建议。",
+            summary="已按景区坐标提供午餐和晚餐建议。",
             data=data,
             sources=tuple(sources),
             warnings=("餐饮营业时间与服务安排请以商家官方信息为准。",) if missing_fields else (),
@@ -147,33 +170,108 @@ class FoodAgent:
             trace_id=trace_id,
         )
 
+    async def _plan_meal(
+        self,
+        request: TravelPlanRequest,
+        day: int,
+        meal_period: str,
+        slot_name: str,
+        attraction: Any,
+        sources: list[Source],
+    ) -> tuple[DailyFoodPlan, list[str]]:
+        fields: list[str] = []
+        poi = None
+        if attraction is not None:
+            try:
+                poi = self._value(attraction, "poi")
+            except (AttributeError, KeyError, TypeError):
+                poi = None
+        name = None
+        address = request.destination
+        location = None
+        if poi is not None:
+            try:
+                name = self._value(poi, "name")
+                address_value = self._value(poi, "address", None)
+                if isinstance(address_value, str) and address_value.strip():
+                    address = address_value
+                location_value = self._value(poi, "location", None)
+                if isinstance(location_value, str) and location_value.strip():
+                    location = location_value
+            except (AttributeError, KeyError, TypeError):
+                pass
+        if attraction is None or not isinstance(name, str) or not name.strip():
+            fields.append(f"food_day_{day}_{slot_name}_attraction")
+        if location is None:
+            fields.append(f"food_day_{day}_{slot_name}_location")
+
+        candidate = None
+        if location is not None:
+            try:
+                raw_pois = await self.amap_client.search_nearby_poi("餐饮服务", location, 2000)
+                if not isinstance(raw_pois, list):
+                    raise ValueError("POI 响应格式无效")
+                for item in raw_pois:
+                    if not isinstance(item, dict) or not self._matches_category(item.get("category"), "餐饮服务"):
+                        continue
+                    raw_name = item.get("name")
+                    poi_item = item
+                    if isinstance(raw_name, str) and len(raw_name) > 100:
+                        poi_item = dict(item)
+                        poi_item["name"] = raw_name[:100]
+                    try:
+                        candidate = FoodCandidate(poi=self._poi(poi_item, "amap:food", "餐饮服务"))
+                    except (KeyError, TypeError, ValueError, ValidationError):
+                        continue
+                    if isinstance(raw_name, str) and len(raw_name) > 100:
+                        fields.append(f"food_day_{day}_{slot_name}_candidate_name")
+                    self._append_sources(sources, [item])
+                    break
+            except (ExternalServiceUnavailable, KeyError, TypeError, ValueError, ValidationError):
+                candidate = None
+        if candidate is None:
+            fields.append(f"food_day_{day}_{slot_name}_candidates")
+        plan_area = address if isinstance(address, str) and len(address) <= 100 else request.destination
+        if plan_area != address:
+            fields.append(f"food_day_{day}_{slot_name}_area")
+        plan_name = name if isinstance(name, str) and name.strip() else None
+        if plan_name is not None and len(plan_name) > 100:
+            plan_name = plan_name[:100]
+            fields.append(f"food_day_{day}_{slot_name}_attraction_name")
+        plan = DailyFoodPlan(
+            day=day,
+            area=plan_area,
+            meal_period=meal_period,
+            nearby_attraction_name=plan_name,
+            candidates=(candidate,) if candidate else (),
+            filter_suggestions=()
+            if candidate
+            else ("附近餐饮候选需以商家官方信息核验，请勿以不安全区域文本搜索替代。",),
+        )
+        return plan, fields
+
     @staticmethod
-    def _daily_area(item: Any, max_days: int) -> tuple[int, str]:
-        try:
-            day = item.day if hasattr(item, "day") else item["day"]
-            area = item.area if hasattr(item, "area") else item["area"]
-        except (AttributeError, KeyError, TypeError) as exc:
-            raise ValueError("每日区域字段缺失") from exc
-        if isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= max_days:
-            raise ValueError("每日区域 day 无效")
-        if not isinstance(area, str) or not area.strip():
-            raise ValueError("每日区域 area 无效")
-        return day, area
+    def _value(item: Any, key: str, default: Any = ...):
+        if hasattr(item, key):
+            return getattr(item, key)
+        if isinstance(item, dict):
+            if key in item:
+                return item[key]
+            if default is not ...:
+                return default
+        if default is not ...:
+            return default
+        raise KeyError(key)
 
     @staticmethod
     def _poi(item: dict[str, Any], source_id: str, expected_category: str) -> PoiCandidate:
-        if not isinstance(item, dict):
-            raise TypeError("POI 项格式无效")
         tags = item.get("tags", ())
         if tags is None:
             tags = ()
         if not isinstance(tags, (list, tuple)):
             raise TypeError("POI 标签格式无效")
         category = item.get("category")
-        if not isinstance(category, str):
-            raise ValueError("POI 分类不匹配")
-        category = category.strip()
-        if category != expected_category:
+        if not FoodAgent._matches_category(category, expected_category):
             raise ValueError("POI 分类不匹配")
         return PoiCandidate(
             name=item["name"],
@@ -182,6 +280,15 @@ class FoodAgent:
             category=expected_category,
             tags=tuple(tags),
             source_ids=(source_id,),
+        )
+
+    @staticmethod
+    def _matches_category(category: object, expected_category: str) -> bool:
+        if not isinstance(category, str):
+            return False
+        return any(
+            group.strip().split(";", 1)[0].strip() == expected_category
+            for group in category.split("|")
         )
 
     @staticmethod
@@ -204,14 +311,15 @@ class FoodAgent:
             )
             if not any(
                 (
-                    item.name,
-                    item.type,
-                    item.data_status,
-                    item.source_updated_at,
-                    str(item.url) if item.url is not None else None,
-                    item.knowledge_version,
-                ) == key
-                for item in sources
+                    existing.name,
+                    existing.type,
+                    existing.data_status,
+                    existing.source_updated_at,
+                    str(existing.url) if existing.url is not None else None,
+                    existing.knowledge_version,
+                )
+                == key
+                for existing in sources
             ):
                 sources.append(source)
 

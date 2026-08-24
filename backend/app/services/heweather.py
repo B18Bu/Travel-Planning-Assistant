@@ -15,7 +15,7 @@ from app.services.resilience import CircuitBreaker, ExternalServiceUnavailable, 
 class HeWeatherClient:
     """和风天气逐日预报的受控只读客户端。"""
 
-    _base_url = "https://devapi.qweather.com"
+    _base_url = "https://pb5ctx5qqr.re.qweatherapi.com"
 
     def __init__(self, api_key: str, base_url: str = _base_url, cache: MemoryCache | None = None, breaker: CircuitBreaker | None = None, max_attempts: int = 3, cache_ttl_seconds: int = 1800, timeout: httpx.Timeout | float = 10.0) -> None:
         if base_url != self._base_url:

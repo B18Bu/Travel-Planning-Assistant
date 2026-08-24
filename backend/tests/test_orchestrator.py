@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.travel import AgentResult, AgentStatus, TravelPlanRequest
+from app.models.travel import AgentResult, AgentName, AgentStatus, DailyItinerary, ErrorDetail, TravelPlanRequest
 from app.orchestration.sequential import SequentialTravelOrchestrator
 
 
@@ -42,7 +42,8 @@ def request_payload():
 async def test_orchestrator_runs_agents_in_order_and_passes_contract_values(request_payload):
     calls = []
     weather = SimpleNamespace(constraints=("避开暴雨",), data=SimpleNamespace(constraints=("避开暴雨",)))
-    route = SimpleNamespace(data=SimpleNamespace(daily_areas=("西湖", "灵隐")))
+    route_itineraries = (DailyItinerary(day=1, weather_reminder="晴", attractions=(), missing_fields=("attractions",)),)
+    route = SimpleNamespace(data=SimpleNamespace(daily_areas=("西湖", "灵隐"), daily_itineraries=route_itineraries))
     agents = [
         RecordingAgent("weather", weather, calls),
         RecordingAgent("route", route, calls),
@@ -56,9 +57,9 @@ async def test_orchestrator_runs_agents_in_order_and_passes_contract_values(requ
 
     assert result == "document"
     assert [call[0] for call in calls] == ["weather", "route", "lodging", "food", "summary"]
-    assert calls[1][1][1] == ("避开暴雨",)
+    assert calls[1][1][1] is weather
     assert calls[2][1][1] == ("西湖", "灵隐")
-    assert calls[3][1][1] == ("西湖", "灵隐")
+    assert calls[3][1][1] == route_itineraries
     assert calls[0][1][1:] == ("request-id", "trace-id")
     assert calls[1][1][2:] == ("request-id", "trace-id")
     assert calls[4][1][-2:] == ("request-id", "trace-id")
@@ -120,10 +121,46 @@ async def test_orchestrator_wraps_agent_exception_and_runs_remaining_agents(requ
     assert failed_result.missing_fields
     assert calls[-1][1][-2:] == (request_id, request_id)
     if failed_index == 0:
-        assert calls[1][1][1] == ()
+        assert isinstance(calls[1][1][1], AgentResult)
+        assert calls[1][1][1].status is AgentStatus.failed
     if failed_index == 1:
         assert all(area.area == request_payload.destination for area in calls[2][1][1])
-        assert calls[2][1][1] == calls[3][1][1]
+        assert all(not item.attractions for item in calls[3][1][1])
+        assert all(item.missing_fields == ("attractions",) for item in calls[3][1][1])
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_preserves_failed_route_result_for_summary(request_payload):
+    calls = []
+    weather = SimpleNamespace(constraints=(), data=None)
+    request_id = str(uuid4())
+    route = AgentResult(
+        agent=AgentName.route,
+        status=AgentStatus.failed,
+        summary="路线规划失败",
+        missing_fields=("route_result",),
+        error=ErrorDetail(code="route_failed", message="路线服务不可用", retryable=True),
+        request_id=request_id,
+        trace_id=request_id,
+    )
+    agents = [
+        RecordingAgent("weather", weather, calls),
+        RecordingAgent("route", route, calls),
+        RecordingAgent("lodging", "lodging-result", calls),
+        RecordingAgent("food", "food-result", calls),
+    ]
+    summary = RecordingSummary(calls)
+    orchestrator = SequentialTravelOrchestrator(*agents, summary)
+
+    await orchestrator.run(request_payload, request_id, request_id)
+
+    summary_route = calls[-1][1][1]
+    assert summary_route is route
+    assert summary_route.data is None
+    assert summary_route.missing_fields == ("route_result",)
+    assert summary_route.error.code == "route_failed"
+    assert len(calls[2][1][1]) == request_payload.days
+    assert len(calls[3][1][1]) == request_payload.days
 
 
 @pytest.mark.asyncio
@@ -143,6 +180,9 @@ async def test_orchestrator_uses_safe_fallback_areas_when_route_has_no_data(requ
     await orchestrator.run(request_payload, "request-id", "trace-id")
 
     fallback = calls[2][1][1]
-    assert fallback == calls[3][1][1]
     assert len(fallback) == request_payload.days
     assert all(area.area == request_payload.destination for area in fallback)
+    food_fallback = calls[3][1][1]
+    assert len(food_fallback) == request_payload.days
+    assert all(not item.attractions for item in food_fallback)
+    assert all(item.missing_fields == ("attractions",) for item in food_fallback)

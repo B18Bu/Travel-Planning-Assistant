@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
-from app.models.travel import AgentResult, DailyArea, ErrorDetail
+from app.models.travel import AgentResult, DailyArea, DailyItinerary, ErrorDetail, RoutePlanData
 
 
 class SequentialTravelOrchestrator:
@@ -19,20 +19,34 @@ class SequentialTravelOrchestrator:
         weather = await self._safe_agent_call(
             "weather", lambda: self.weather.run(request, request_id, trace_id), request_id, trace_id
         )
-        constraints = getattr(weather, "constraints", ()) or ()
         route = await self._safe_agent_call(
             "route",
-            lambda: self.route.run(request, constraints, request_id, trace_id),
+            lambda: self.route.run(request, weather, request_id, trace_id),
             request_id,
             trace_id,
         )
-        route_data = getattr(route, "data", None)
-        daily_areas = getattr(route_data, "daily_areas", None)
-        if not daily_areas:
-            daily_areas = tuple(
-                DailyArea(day=day, area=request.destination)
-                for day in range(1, request.days + 1)
+        route_data_for_downstream = getattr(route, "data", None)
+        if route_data_for_downstream is None:
+            route_data_for_downstream = RoutePlanData(
+                origin=request.origin,
+                destination=request.destination,
+                daily_areas=tuple(
+                    DailyArea(day=day, area=request.destination)
+                    for day in range(1, request.days + 1)
+                ),
+                daily_itineraries=tuple(
+                    DailyItinerary(
+                        day=day,
+                        weather_reminder="路线待核验。",
+                        attractions=(),
+                        missing_fields=("attractions",),
+                    )
+                    for day in range(1, request.days + 1)
+                ),
+                weather_adjusted=False,
             )
+        daily_areas = route_data_for_downstream.daily_areas
+        daily_itineraries = route_data_for_downstream.daily_itineraries
         lodging = await self._safe_agent_call(
             "lodging",
             lambda: self.lodging.run(request, daily_areas, request_id, trace_id),
@@ -41,7 +55,7 @@ class SequentialTravelOrchestrator:
         )
         food = await self._safe_agent_call(
             "food",
-            lambda: self.food.run(request, daily_areas, request_id, trace_id),
+            lambda: self.food.run(request, daily_itineraries, request_id, trace_id),
             request_id,
             trace_id,
         )

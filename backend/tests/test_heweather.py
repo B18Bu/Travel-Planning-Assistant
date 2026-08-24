@@ -9,7 +9,7 @@ from app.services.resilience import CircuitBreaker, ExternalServiceUnavailable
 from app.services.heweather import HeWeatherClient
 
 
-BASE = "https://devapi.qweather.com"
+BASE = "https://pb5ctx5qqr.re.qweatherapi.com"
 
 
 def client(**kwargs):
@@ -223,13 +223,13 @@ async def test_invalid_weather_structure_is_controlled(payload):
 @pytest.mark.parametrize("bad_url", [
     "http://evil.test",
     "https://evil.test",
-    "https://devapi.qweather.com/",
-    "https://devapi.qweather.com/path",
-    "https://devapi.qweather.com?x=1",
-    "https://devapi.qweather.com#frag",
-    "https://user@devapi.qweather.com",
-    "https://devapi.qweather.com:443",
-    "https://DEVAPI.QWEATHER.COM",
+    "https://pb5ctx5qqr.re.qweatherapi.com/",
+    "https://pb5ctx5qqr.re.qweatherapi.com/path",
+    "https://pb5ctx5qqr.re.qweatherapi.com?x=1",
+    "https://pb5ctx5qqr.re.qweatherapi.com#frag",
+    "https://user@pb5ctx5qqr.re.qweatherapi.com",
+    "https://pb5ctx5qqr.re.qweatherapi.com:443",
+    "https://PB5CTX5QQR.RE.QWEATHERAPI.COM",
 ])
 def test_rejects_noncanonical_weather_base_url(bad_url):
     with pytest.raises(ExternalServiceUnavailable, match="和风天气服务地址不受支持"):

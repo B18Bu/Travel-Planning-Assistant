@@ -9,6 +9,7 @@ from app.models.travel import (
     AgentStatus,
     DailyArea,
     DailyFoodPlan,
+    DailyItinerary,
     DailyWeather,
     DataStatus,
     ErrorDetail,
@@ -22,6 +23,7 @@ from app.models.travel import (
     RoutePlanData,
     Source,
     SourceType,
+    TimedAttraction,
     TravelPlanDocument,
     TravelPlanData,
     TravelPlanRequest,
@@ -376,6 +378,8 @@ def test_domain_fact_models_serialize_successfully():
         temp_min=24,
         temp_max=32,
         risk_level=WeatherRiskLevel.low,
+        travel_reminder="天气适宜出行，请做好防晒。",
+        indoor_preferred=False,
         equipment_suggestions=["遮阳伞"],
     )
     route = RouteEstimate(distance_meters=1200, duration_minutes=20)
@@ -391,6 +395,188 @@ def test_domain_fact_models_serialize_successfully():
 def test_poi_rejects_empty_source_ids():
     with pytest.raises(ValidationError):
         PoiCandidate(name="断桥", category="景点", source_ids=[])
+
+
+def timed_attraction_payload(**overrides):
+    payload = {
+        "time_slot": "上午",
+        "poi": poi_payload(),
+        "suggested_duration_minutes": 90,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def daily_itinerary_payload(**overrides):
+    payload = {
+        "day": 1,
+        "weather_reminder": "午后可能降雨，建议携带雨具",
+        "attractions": [timed_attraction_payload()],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_timed_attraction_accepts_only_supported_time_slots():
+    for time_slot in ("上午", "下午", "傍晚"):
+        attraction = TimedAttraction(**timed_attraction_payload(time_slot=time_slot))
+        assert attraction.time_slot == time_slot
+
+    with pytest.raises(ValidationError):
+        TimedAttraction(**timed_attraction_payload(time_slot="深夜"))
+
+
+def test_daily_weather_rejects_empty_travel_reminder():
+    with pytest.raises(ValidationError):
+        DailyWeather(
+            date=date(2026, 8, 20),
+            condition="晴",
+            risk_level=WeatherRiskLevel.low,
+            travel_reminder="",
+            indoor_preferred=False,
+        )
+
+
+def test_daily_itinerary_allows_at_most_three_attractions():
+    with pytest.raises(ValidationError):
+        DailyItinerary(
+            **daily_itinerary_payload(
+                attractions=[timed_attraction_payload() for _ in range(4)]
+            )
+        )
+
+
+def test_timed_attraction_requires_positive_suggested_duration():
+    with pytest.raises(ValidationError):
+        TimedAttraction(**timed_attraction_payload(suggested_duration_minutes=0))
+
+
+def test_daily_food_plan_accepts_only_lunch_or_dinner_meal_period():
+    for meal_period in ("午餐", "晚餐", None):
+        plan = DailyFoodPlan(day=1, area="西湖景区", meal_period=meal_period)
+        assert plan.meal_period == meal_period
+
+    with pytest.raises(ValidationError):
+        DailyFoodPlan(day=1, area="西湖景区", meal_period="早餐")
+
+
+def test_daily_food_plan_validates_nearby_attraction_name():
+    assert DailyFoodPlan(
+        day=1, area="西湖景区", nearby_attraction_name="断桥"
+    ).nearby_attraction_name == "断桥"
+    assert DailyFoodPlan(day=1, area="西湖景区", nearby_attraction_name=None).nearby_attraction_name is None
+
+    with pytest.raises(ValidationError):
+        DailyFoodPlan(day=1, area="西湖景区", nearby_attraction_name="")
+
+
+def test_food_candidate_excludes_unrecognized_transactional_fields():
+    forbidden = {"rating", "score", "recommendation"}
+    assert not forbidden & set(FoodCandidate.model_fields)
+    assert not forbidden & set(FoodCandidate(poi=PoiCandidate(**poi_payload())).model_dump())
+
+
+def test_route_plan_requires_daily_itineraries():
+    with pytest.raises(ValidationError):
+        RoutePlanData(
+            origin="上海",
+            destination="杭州",
+            daily_areas=[DailyArea(day=1, area="西湖景区")],
+            weather_adjusted=True,
+        )
+
+
+def test_route_plan_stores_daily_itineraries():
+    plan = RoutePlanData(
+        origin="上海",
+        destination="杭州",
+        daily_areas=[DailyArea(day=1, area="西湖景区")],
+        daily_itineraries=[daily_itinerary_payload()],
+        weather_adjusted=True,
+    )
+
+    assert plan.daily_itineraries[0].day == 1
+
+
+@pytest.mark.parametrize(
+    "daily_areas,daily_itineraries",
+    [
+        ([DailyArea(day=1, area="西湖景区")], [{"day": 2, "weather_reminder": "天气适宜出行", "attractions": (), "missing_fields": ("attractions",)}]),
+        ([DailyArea(day=1, area="西湖景区"), DailyArea(day=1, area="灵隐寺")], [{"day": 1, "weather_reminder": "天气适宜出行", "attractions": (), "missing_fields": ("attractions",)}]),
+        ([DailyArea(day=2, area="灵隐寺"), DailyArea(day=1, area="西湖景区")], [{"day": 1, "weather_reminder": "天气适宜出行", "attractions": (), "missing_fields": ("attractions",)}, {"day": 2, "weather_reminder": "天气适宜出行", "attractions": (), "missing_fields": ("attractions",)}]),
+        ([DailyArea(day=1, area="西湖景区"), DailyArea(day=2, area="灵隐寺")], [{"day": 2, "weather_reminder": "天气适宜出行", "attractions": (), "missing_fields": ("attractions",)}, {"day": 1, "weather_reminder": "天气适宜出行", "attractions": (), "missing_fields": ("attractions",)}]),
+    ],
+)
+def test_route_plan_rejects_mismatched_duplicate_or_unsorted_days(daily_areas, daily_itineraries):
+    with pytest.raises(ValidationError):
+        RoutePlanData(
+            origin="上海",
+            destination="杭州",
+            daily_areas=daily_areas,
+            daily_itineraries=daily_itineraries,
+            weather_adjusted=True,
+        )
+
+
+def test_daily_itinerary_requires_missing_fields_when_attractions_empty():
+    with pytest.raises(ValidationError):
+        DailyItinerary(day=1, weather_reminder="等待景点规划", attractions=[])
+
+
+def test_daily_itinerary_allows_empty_missing_fields_when_attractions_exist():
+    itinerary = DailyItinerary(
+        day=1,
+        weather_reminder="天气适宜出行",
+        attractions=[timed_attraction_payload()],
+    )
+
+    assert itinerary.missing_fields == ()
+
+
+def test_daily_itinerary_rejects_duplicate_time_slots():
+    with pytest.raises(ValidationError):
+        DailyItinerary(
+            day=1,
+            weather_reminder="天气适宜出行",
+            attractions=[
+                timed_attraction_payload(time_slot="上午"),
+                timed_attraction_payload(time_slot="上午"),
+            ],
+        )
+
+
+def test_daily_itinerary_rejects_time_slots_out_of_natural_order():
+    with pytest.raises(ValidationError):
+        DailyItinerary(
+            day=1,
+            weather_reminder="天气适宜出行",
+            attractions=[
+                timed_attraction_payload(time_slot="下午"),
+                timed_attraction_payload(time_slot="上午"),
+            ],
+        )
+
+
+def test_daily_weather_requires_indoor_preference_for_high_risk():
+    with pytest.raises(ValidationError):
+        DailyWeather(
+            date=date(2026, 8, 20),
+            condition="暴雨",
+            risk_level=WeatherRiskLevel.high,
+            travel_reminder="优先室内活动",
+            indoor_preferred=False,
+        )
+
+
+def test_daily_weather_rejects_indoor_preference_for_low_risk():
+    with pytest.raises(ValidationError):
+        DailyWeather(
+            date=date(2026, 8, 20),
+            condition="晴",
+            risk_level=WeatherRiskLevel.low,
+            travel_reminder="适宜出行",
+            indoor_preferred=True,
+        )
 
 
 def test_route_estimate_rejects_non_estimate_value():
@@ -415,7 +601,7 @@ def test_domain_fact_models_reject_commercial_fields(model):
     payloads = {
         NormalizedLocation: {"name": "西湖"},
         PoiCandidate: {"name": "断桥", "category": "景点", "source_ids": ["source-1"]},
-        DailyWeather: {"date": date(2026, 8, 20), "condition": "晴", "risk_level": WeatherRiskLevel.low},
+        DailyWeather: {"date": date(2026, 8, 20), "condition": "晴", "risk_level": WeatherRiskLevel.low, "travel_reminder": "天气适宜出行", "indoor_preferred": False},
         RouteEstimate: {"distance_meters": 1, "duration_minutes": 1},
         DailyArea: {"day": 1, "area": "西湖景区"},
     }
@@ -427,7 +613,7 @@ def weather_plan_payload():
     return {
         "destination": "杭州",
         "daily": [
-            {"date": date(2026, 8, 20), "condition": "晴", "risk_level": WeatherRiskLevel.low}
+            {"date": date(2026, 8, 20), "condition": "晴", "risk_level": WeatherRiskLevel.low, "travel_reminder": "天气适宜出行", "indoor_preferred": False}
         ],
     }
 
@@ -440,7 +626,7 @@ def test_agent_plan_models_construct_and_serialize():
     poi = PoiCandidate(**poi_payload())
     weather_plan = WeatherPlanData(**weather_plan_payload())
     route_plan = RoutePlanData(
-        origin="上海", destination="杭州", daily_areas=[DailyArea(day=1, area="西湖景区")], weather_adjusted=True
+        origin="上海", destination="杭州", daily_areas=[DailyArea(day=1, area="西湖景区")], daily_itineraries=[daily_itinerary_payload()], weather_adjusted=True
     )
     lodging_plan = LodgingPlanData(nights=2, recommended_area="西湖景区", candidates=[LodgingCandidate(poi=poi)])
     food_plan = FoodPlanData(daily_food=[DailyFoodPlan(day=1, area="西湖景区", candidates=[FoodCandidate(poi=poi)])])
@@ -464,6 +650,98 @@ def test_weather_plan_data_allows_empty_daily_for_degraded_result():
 
     assert result.data is not None
     assert result.data.daily == ()
+
+
+def route_plan_with_attractions():
+    return RoutePlanData(
+        origin="上海",
+        destination="杭州",
+        daily_areas=[DailyArea(day=1, area="西湖景区")],
+        daily_itineraries=[
+            {
+                "day": 1,
+                "weather_reminder": "天气适宜出行",
+                "attractions": [
+                    {
+                        "time_slot": "上午",
+                        "poi": {
+                            "name": "断桥",
+                            "category": "景点",
+                            "location": "120,30",
+                            "source_ids": ["amap:attraction"],
+                        },
+                        "suggested_duration_minutes": 90,
+                    }
+                ],
+            }
+        ],
+        weather_adjusted=False,
+    )
+
+
+def test_route_success_result_rejects_empty_daily_attractions():
+    with pytest.raises(ValidationError):
+        AgentResult[RoutePlanData](
+            agent="route",
+            status=AgentStatus.success,
+            summary="路线规划结果",
+            data=RoutePlanData(
+                origin="上海",
+                destination="杭州",
+                daily_areas=[DailyArea(day=1, area="西湖景区")],
+                daily_itineraries=[
+                    {
+                        "day": 1,
+                        "weather_reminder": "景区行程待生成",
+                        "attractions": (),
+                        "missing_fields": ("attractions",),
+                    }
+                ],
+                weather_adjusted=True,
+            ),
+            request_id="550e8400-e29b-41d4-a716-446655440000",
+            trace_id="550e8400-e29b-41d4-a716-446655440000",
+        )
+
+
+def test_route_partial_result_allows_empty_daily_attractions_with_missing_fields():
+    result = AgentResult[RoutePlanData](
+        agent="route",
+        status=AgentStatus.partial,
+        summary="景点行程待生成",
+        data=RoutePlanData(
+            origin="上海",
+            destination="杭州",
+            daily_areas=[DailyArea(day=1, area="西湖景区")],
+            daily_itineraries=[
+                {
+                    "day": 1,
+                    "weather_reminder": "景区行程待生成",
+                    "attractions": (),
+                    "missing_fields": ("attractions",),
+                }
+            ],
+            weather_adjusted=True,
+        ),
+        missing_fields=("attractions",),
+        request_id="550e8400-e29b-41d4-a716-446655440000",
+        trace_id="550e8400-e29b-41d4-a716-446655440000",
+    )
+
+    assert result.status is AgentStatus.partial
+
+
+def test_route_success_result_accepts_populated_daily_attractions():
+    result = AgentResult[RoutePlanData](
+        agent="route",
+        status=AgentStatus.success,
+        summary="路线规划结果",
+        data=route_plan_with_attractions(),
+        request_id="550e8400-e29b-41d4-a716-446655440000",
+        trace_id="550e8400-e29b-41d4-a716-446655440000",
+    )
+
+    assert result.status is AgentStatus.success
 
 
 def test_weather_success_result_requires_at_least_one_daily_forecast():
@@ -494,7 +772,7 @@ def test_non_weather_generic_success_result_does_not_use_weather_daily_rule():
 @pytest.mark.parametrize(
     ("model", "payload"),
     [
-        (RoutePlanData, {"origin": "上海", "destination": "杭州", "daily_areas": [], "weather_adjusted": False}),
+        (RoutePlanData, {"origin": "上海", "destination": "杭州", "daily_areas": [], "daily_itineraries": [], "weather_adjusted": False}),
         (LodgingPlanData, {"nights": -1, "recommended_area": "西湖景区"}),
         (FoodPlanData, {"daily_food": []}),
         (DailyFoodPlan, {"day": 0, "area": "西湖景区"}),
@@ -553,7 +831,7 @@ def test_candidate_defaults_and_nested_poi_validation():
     ("model", "payload"),
     [
         (WeatherPlanData, weather_plan_payload()),
-        (RoutePlanData, {"origin": "上海", "destination": "杭州", "daily_areas": [{"day": 1, "area": "西湖景区"}], "weather_adjusted": False}),
+        (RoutePlanData, {"origin": "上海", "destination": "杭州", "daily_areas": [{"day": 1, "area": "西湖景区"}], "daily_itineraries": [daily_itinerary_payload()], "weather_adjusted": False}),
         (LodgingCandidate, {"poi": poi_payload()}),
         (LodgingPlanData, {"nights": 1, "recommended_area": "西湖景区"}),
         (FoodCandidate, {"poi": poi_payload()}),
@@ -789,7 +1067,7 @@ def travel_plan_data(request_id="550e8400-e29b-41d4-a716-446655440000", trace_id
             status=statuses.get("route", AgentStatus.success),
             summary="路线规划结果",
             data=RoutePlanData(
-                origin="上海", destination="杭州", daily_areas=[DailyArea(day=1, area="西湖景区")], weather_adjusted=True
+                origin="上海", destination="杭州", daily_areas=[DailyArea(day=1, area="西湖景区")], daily_itineraries=[daily_itinerary_payload()], weather_adjusted=True
             ),
             sources=[
                 document_source("公共来源", retrieved_at=datetime(2026, 8, 19, 11)),

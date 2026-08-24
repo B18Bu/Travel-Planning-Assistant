@@ -48,10 +48,18 @@ class LodgingAgent:
                 recommended_area=area,
                 filter_suggestions=("请按活动区域、交通便利性和入住日期筛选。",),
             )
-            raw_pois = await self.amap_client.search_poi("住宿服务", area)
+            # 高德 region 需为单一城市名；daily_areas 的 area 可能是「四川省成都市」这类
+            # 格式化地址，无法映射城市会绕过 city_limit 导致跨城市返回。
+            raw_pois = await self.amap_client.search_poi("住宿服务", request.destination)
             if not isinstance(raw_pois, list):
                 raise ValueError("POI 响应格式无效")
-            limited_pois = raw_pois[:10]
+            matching_pois = [
+                item
+                for item in raw_pois
+                if isinstance(item, dict)
+                and self._matches_category(item.get("category"), "住宿服务")
+            ]
+            limited_pois = matching_pois[:10]
             candidates = tuple(
                 LodgingCandidate(poi=self._poi(item, "amap:lodging", "住宿服务"))
                 for item in limited_pois
@@ -112,9 +120,9 @@ class LodgingAgent:
         category = item.get("category")
         if not isinstance(category, str):
             raise ValueError("POI 分类不匹配")
-        category = category.strip()
-        if category != expected_category:
+        if not LodgingAgent._matches_category(category, expected_category):
             raise ValueError("POI 分类不匹配")
+        category = expected_category
         return PoiCandidate(
             name=item["name"],
             address=item.get("address"),
@@ -122,6 +130,15 @@ class LodgingAgent:
             category=expected_category,
             tags=tuple(tags),
             source_ids=(source_id,),
+        )
+
+    @staticmethod
+    def _matches_category(category: object, expected_category: str) -> bool:
+        if not isinstance(category, str):
+            return False
+        return any(
+            group.strip().split(";", 1)[0].strip() == expected_category
+            for group in category.split("|")
         )
 
     @staticmethod
