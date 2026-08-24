@@ -84,6 +84,7 @@ def test_env_example_parses_external_defaults_without_real_keys(monkeypatch):
         "AMAP_ROUTE_CACHE_TTL_SECONDS",
         "AMAP_POI_CACHE_TTL_SECONDS",
         "DOCUMENT_BATCH_MAX_FILES",
+        "KNOWLEDGE_SEARCH_RESULT_LIMIT",
         "DEEPSEEK_API_KEY",
         "DEEPSEEK_BASE_URL",
         "DEEPSEEK_MODEL",
@@ -113,6 +114,7 @@ def test_env_example_parses_external_defaults_without_real_keys(monkeypatch):
         "amap_route_cache_ttl_seconds",
         "amap_poi_cache_ttl_seconds",
         "document_batch_max_files",
+        "knowledge_search_result_limit",
     ]
     for field in fields:
         assert getattr(parsed, field) == getattr(defaults, field)
@@ -121,6 +123,7 @@ def test_env_example_parses_external_defaults_without_real_keys(monkeypatch):
     assert parsed.heweather_api_key == ""
     assert parsed.amap_api_key == ""
     assert parsed.document_batch_max_files == 10
+    assert parsed.knowledge_search_result_limit == 12
     assert Path(parsed.document_data_dir).is_absolute()
     assert Path(parsed.document_data_dir).resolve() == (Path(__file__).parents[1] / "data").resolve()
 
@@ -153,6 +156,8 @@ def test_document_settings_are_backend_only_and_have_safe_defaults():
     assert 0 < settings.document_max_upload_bytes <= 100 * 1024 * 1024
     assert settings.document_batch_max_files == 10
     assert 1 <= settings.document_batch_max_files <= 20
+    assert settings.knowledge_search_result_limit == 12
+    assert 1 <= settings.knowledge_search_result_limit <= 50
     assert settings.chroma_collection_name == "travel_documents"
     assert settings.mineru_api_key == ""
     assert settings.mineru_base_url == "https://mineru.net"
@@ -177,6 +182,16 @@ def test_settings_rejects_invalid_document_upload_size(value):
 def test_settings_rejects_invalid_document_batch_max_files(value):
     with pytest.raises(ValueError):
         Settings(document_batch_max_files=value)
+
+
+@pytest.mark.parametrize("value", [0, -1, 51, True, False, "1.2", 1.2, "not-a-number"])
+def test_settings_rejects_invalid_knowledge_search_result_limit(value):
+    with pytest.raises(ValueError):
+        Settings(knowledge_search_result_limit=value)
+
+
+def test_settings_accepts_knowledge_search_result_limit_from_dotenv_string():
+    assert Settings(_env_file=None, knowledge_search_result_limit="36").knowledge_search_result_limit == 36
 
 
 @pytest.mark.parametrize("value", [0, 255, 8193, True, False, "1.2", 1.2, "not-a-number"])
@@ -221,6 +236,7 @@ def test_env_example_documents_each_external_setting_and_never_contains_secret()
         "AMAP_ROUTE_CACHE_TTL_SECONDS",
         "AMAP_POI_CACHE_TTL_SECONDS",
         "DOCUMENT_BATCH_MAX_FILES",
+        "KNOWLEDGE_SEARCH_RESULT_LIMIT",
         "DEEPSEEK_API_KEY",
         "DEEPSEEK_BASE_URL",
         "DEEPSEEK_MODEL",
@@ -259,6 +275,7 @@ CONFIG_FIELD_DOCUMENTATION = {
     "amap_geocode_cache_ttl_seconds": ["单位为秒，默认值：604800", "高德地理编码", "仅由后端控制，不接受客户端覆盖"],
     "amap_route_cache_ttl_seconds": ["单位为秒，默认值：900", "高德驾车路线", "仅由后端控制，不接受客户端覆盖"],
     "amap_poi_cache_ttl_seconds": ["单位为秒，默认值：3600", "高德 POI", "仅由后端控制，不接受客户端覆盖"],
+    "knowledge_search_result_limit": ["默认值：12，范围：1—50", "知识检索", "仅由后端控制，不接受客户端覆盖"],
     "deepseek_base_url": ["https://api.deepseek.com", "DeepSeek", "仅由后端控制，不接受客户端覆盖"],
     "deepseek_model": ["deepseek-chat", "DeepSeek", "仅由后端控制，不接受客户端覆盖"],
     "deepseek_max_tokens": ["默认值：2000", "DeepSeek", "仅由后端控制，不接受客户端覆盖"],
@@ -279,6 +296,7 @@ ENV_FIELD_DOCUMENTATION = {
     "AMAP_GEOCODE_CACHE_TTL_SECONDS": ["单位：秒，默认值：604800", "高德地理编码", "仅后端控制，客户端不可覆盖"],
     "AMAP_ROUTE_CACHE_TTL_SECONDS": ["单位：秒，默认值：900", "高德驾车路线", "仅后端控制，客户端不可覆盖"],
     "AMAP_POI_CACHE_TTL_SECONDS": ["单位：秒，默认值：3600", "高德 POI", "仅后端控制，客户端不可覆盖"],
+    "KNOWLEDGE_SEARCH_RESULT_LIMIT": ["默认值：12，范围：1—50", "知识检索", "仅后端控制，客户端不可覆盖"],
     "DEEPSEEK_BASE_URL": ["https://api.deepseek.com", "DeepSeek", "仅后端控制，客户端不可覆盖"],
     "DEEPSEEK_MODEL": ["deepseek-chat", "DeepSeek", "仅后端控制，客户端不可覆盖"],
     "DEEPSEEK_MAX_TOKENS": ["默认值：2000", "DeepSeek", "仅后端控制，客户端不可覆盖"],

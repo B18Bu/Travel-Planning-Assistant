@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     )
     # 单次文档批量上传最大文件数，默认值：10，范围：1—20；仅由后端控制，不接受客户端覆盖。
     document_batch_max_files: int = Field(default=10, ge=1, le=20)
+    # 知识检索最终返回结果数，默认值：12，范围：1—50；仅由后端控制，不接受客户端覆盖。
+    knowledge_search_result_limit: int = Field(default=12, ge=1, le=50)
 
     # 所有外部 API HTTP 连接建立超时，单位为秒，默认值：3.0；仅由后端控制，不接受客户端覆盖。
     external_connect_timeout_seconds: float = 3.0
@@ -130,6 +132,7 @@ class Settings(BaseSettings):
         "amap_poi_cache_ttl_seconds",
         "document_max_upload_bytes",
         "document_batch_max_files",
+        "knowledge_search_result_limit",
         "deepseek_max_tokens",
         mode="before",
     )
