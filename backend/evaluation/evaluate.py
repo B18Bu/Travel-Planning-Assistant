@@ -24,8 +24,6 @@ from app.services.keyword_search import (
     search_chunks,
 )
 from app.services.knowledge_polish import KnowledgePolisher
-from app.services.resilience import ExternalServiceUnavailable
-
 from evaluation.judge import Judge
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,8 +35,20 @@ METRIC_KEYS = ("faithfulness", "context_recall", "context_precision", "answer_re
 def _load_golden() -> list[dict[str, str]]:
     with open(GOLDEN_PATH, encoding="utf-8") as f:
         data = json.load(f)
-    if not isinstance(data, list):
-        raise ValueError("golden_set.json 顶层必须是数组")
+    if not isinstance(data, list) or not data:
+        raise ValueError("golden_set.json 顶层必须是非空数组")
+    ids: set[str] = set()
+    for index, item in enumerate(data, 1):
+        if not isinstance(item, dict):
+            raise ValueError(f"golden_set.json 第 {index} 项必须是对象")
+        for field in ("id", "question", "reference_answer"):
+            value = item.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"golden_set.json 第 {index} 项的 {field} 必须是非空字符串")
+        item_id = item["id"]
+        if item_id in ids:
+            raise ValueError("golden_set.json 的 id 不得重复")
+        ids.add(item_id)
     return data
 
 
@@ -53,31 +63,48 @@ class RetrievalService:
             settings.chroma_collection_name,
             LocalBgeEmbedder(settings.bge_model_path),
         )
-        ready_ids = {
-            record.id
-            for record in self.document_store.list_documents()
-            if record.status is DocumentStatus.ready
-        }
-        self._indexed = self.document_store.get_documents_with_chunks(ready_ids)
-        self._chunks_by_id: dict[UUID, Any] = {}
-        for _record, chunks in self._indexed.values():
-            for chunk in chunks.values():
-                self._chunks_by_id[UUID(str(chunk.id))] = chunk
-
-    def retrieve(self, query: str) -> list[KnowledgeSearchResult]:
+    def retrieve(
+        self, query: str, *, document_ids: tuple[UUID, ...] = ()
+    ) -> list[KnowledgeSearchResult]:
+        query = query.strip()
+        if not query:
+            raise ValueError("检索内容不能为空")
         result_limit = self.settings.knowledge_search_result_limit
         fetch_limit = result_limit * 3
-        semantic_hits = self.chroma.query(query, limit=fetch_limit)
+        ready_records = self.document_store.list_documents()
+        if document_ids:
+            wanted = {str(document_id) for document_id in document_ids}
+            ready_ids = {
+                record.id
+                for record in ready_records
+                if record.status is DocumentStatus.ready and str(record.id) in wanted
+            }
+        else:
+            ready_ids = {
+                record.id
+                for record in ready_records
+                if record.status is DocumentStatus.ready
+            }
+        indexed = self.document_store.get_documents_with_chunks(ready_ids)
+        chunks_by_id: dict[UUID, Any] = {
+            UUID(str(chunk.id)): chunk
+            for _record, chunks in indexed.values()
+            for chunk in chunks.values()
+        }
+        semantic_hits = self.chroma.query(
+            query, document_ids=document_ids, limit=fetch_limit
+        )
         parsed = parse_query(query)
         keyword_hits = search_chunks(
-            list(self._chunks_by_id.values()), parsed, limit=fetch_limit
+            list(chunks_by_id.values()), parsed,
+            document_ids=document_ids, limit=fetch_limit,
         )
         ranked = merge_ranked_hits(
             semantic_hits,
             keyword_hits,
             region_of_chunk=lambda chunk_id: (
-                region_from_document_name(self._chunks_by_id[chunk_id].document_name)
-                if chunk_id in self._chunks_by_id
+                region_from_document_name(chunks_by_id[chunk_id].document_name)
+                if chunk_id in chunks_by_id
                 else None
             ),
             query_region=parsed.region,
@@ -87,8 +114,8 @@ class RetrievalService:
         keyword_score = {UUID(str(hit.chunk_id)): hit.score for hit in keyword_hits}
         results: list[KnowledgeSearchResult] = []
         for hit in ranked:
-            chunk = self._chunks_by_id.get(hit.chunk_id)
-            record = self._indexed.get(hit.document_id)
+            chunk = chunks_by_id.get(hit.chunk_id)
+            record = indexed.get(hit.document_id)
             if chunk is None or record is None or record[0].status is not DocumentStatus.ready:
                 continue
             results.append(KnowledgeSearchResult(
@@ -110,7 +137,7 @@ class RetrievalService:
 async def _safe_metric(judge: Judge, name: str, *args: Any) -> float | None:
     try:
         return await getattr(judge, name)(*args)
-    except (ExternalServiceUnavailable, ValueError, TypeError):
+    except Exception:
         return None
 
 
@@ -127,8 +154,16 @@ async def evaluate_item(
     try:
         results = await asyncio.to_thread(retrieval.retrieve, question)
     except Exception:
-        metrics["retrieval_skipped"] = True
-        results = []
+        metrics.update({
+            "retrieval_skipped": True,
+            "retrieved_count": 0,
+            "retrieved_preview": [],
+            "faithfulness": None,
+            "context_recall": None,
+            "context_precision": None,
+            "answer_relevance": None,
+        })
+        return metrics
     metrics["retrieved_count"] = len(results)
     metrics["retrieved_preview"] = [result.content[:60] for result in results[:5]]
 
@@ -136,7 +171,7 @@ async def evaluate_item(
     if results:
         try:
             answer = await polisher.polish(question, results)
-        except ExternalServiceUnavailable:
+        except Exception:
             answer = None
     metrics["answer"] = answer
 
@@ -187,7 +222,7 @@ def write_report(results: list[dict[str, Any]], aggregated: dict[str, dict[str, 
             text = f"{value:.3f}" if isinstance(value, (int, float)) else "n/a"
             lines.append(f"  - {key}：{text}")
         if item.get("retrieved_preview"):
-            lines.append(f"  - 检索块预览：{item['retrieved_preview'][:3]}")
+            lines.append(f"  - 检索块预览：{item['retrieved_preview']}")
         if item.get("answer"):
             lines.append(f"  - 回答摘要：{item['answer'][:100].replace(chr(10), ' ')}")
         lines.append("")
@@ -200,11 +235,18 @@ async def main() -> None:
     # 与 app/main.py 一致，DeepSeek 调用统一使用 settings.deepseek_timeout_seconds（60s）超时，
     # 避免默认 10s 读超时在 DeepSeek 首字节延迟较长时误判为服务不可用。
     judge = Judge(DeepSeekClient(
-        settings.deepseek_api_key, model=settings.deepseek_model,
-        min_response_length=1, timeout=settings.deepseek_timeout_seconds,
+        settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url,
+        model=settings.deepseek_model,
+        max_tokens=settings.deepseek_max_tokens,
+        min_response_length=1,
+        timeout=settings.deepseek_timeout_seconds,
     ))
     polisher = KnowledgePolisher(DeepSeekClient(
-        settings.deepseek_api_key, model=settings.deepseek_model,
+        settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url,
+        model=settings.deepseek_model,
+        max_tokens=settings.deepseek_max_tokens,
         timeout=settings.deepseek_timeout_seconds,
     ))
     golden = _load_golden()
