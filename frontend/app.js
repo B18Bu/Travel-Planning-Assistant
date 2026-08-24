@@ -61,8 +61,8 @@
     shell.removeAttribute("aria-hidden");
     shell.removeAttribute("inert");
     app.classList.add("ready");
+    showView("plan");
     main.focus();
-    fitWorkbenchToViewport();
   }
 
   function showIntro() {
@@ -391,7 +391,7 @@
     tasks.length = 0;
     currentId = null;
     renderNav();
-    showView("home");
+    showView("plan");
     const synced = await clearKnowledgeRecords();
     toast(synced ? "已清空查询记录" : "查询记录已清空，但同步失败，刷新后可能重新出现");
   }
@@ -413,7 +413,7 @@
     closeConfirm();
     if (index < 0) return;
     const removed = tasks.splice(index, 1)[0];
-    if (removed.id === currentId) { currentId = null; showView("home"); }
+    if (removed.id === currentId) { currentId = null; showView("plan"); }
     if (removed.kind === "knowledge") deleteKnowledgeRecord(removed.id);
     renderNav();
   }
@@ -1140,33 +1140,6 @@
   }
 
   departureInput.min = todayIso();
-  let workbenchFitScheduled = false;
-  function fitWorkbenchToViewport() {
-    if (workbenchFitScheduled) return;
-    workbenchFitScheduled = true;
-    requestAnimationFrame(() => {
-      workbenchFitScheduled = false;
-      const mainEl = document.querySelector(".main");
-      const homeView = mainEl ? mainEl.querySelector("#view-home") : null;
-      if (!mainEl || !homeView) return;
-      if (!homeView.classList.contains("active")) {
-        homeView.style.zoom = "";
-        mainEl.style.overflowY = "auto";
-        return;
-      }
-      homeView.style.zoom = "";
-      const welcome = homeView.querySelector(".home-welcome");
-      const natural = (welcome ? welcome.offsetHeight : 0) + 48;
-      const available = mainEl.clientHeight;
-      if (available > 0 && natural > available) {
-        const ratio = Math.max(0.55, Math.min(1, available / natural));
-        homeView.style.zoom = String(ratio);
-        mainEl.style.overflowY = "hidden";
-      } else {
-        mainEl.style.overflowY = "auto";
-      }
-    });
-  }
 
   startExperienceButton.addEventListener("click", startExperience);
   backToIntroButton.addEventListener("click", showIntro);
@@ -1178,14 +1151,6 @@
   setupTravelShowcase();
   loadKnowledgeRecords();
   updateKnowledgeFoot();
-  const mainElementForFit = document.querySelector(".main");
-  if (mainElementForFit && typeof MutationObserver !== "undefined") {
-    new MutationObserver(fitWorkbenchToViewport).observe(mainElementForFit, {
-      childList: true, subtree: true, attributes: true,
-    });
-  }
-  window.addEventListener("resize", fitWorkbenchToViewport);
-  fitWorkbenchToViewport();
   window.startExperience = startExperience;
   window.showIntro = showIntro;
   window.showView = showView;
