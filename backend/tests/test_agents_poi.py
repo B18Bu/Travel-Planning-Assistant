@@ -239,6 +239,16 @@ async def test_food_empty_itineraries_generates_both_meals_for_each_request_day(
 
 
 @pytest.mark.asyncio
+async def test_food_generates_plans_for_every_request_day_including_ten():
+    client = FakePoiClient()
+    result = await FoodAgent(client).run(request(days=10), (), REQUEST_ID, REQUEST_ID)
+    assert [(plan.day, plan.meal_period) for plan in result.data.daily_food] == [
+        (day, meal) for day in range(1, 11) for meal in ("午餐", "晚餐")
+    ]
+    assert len(result.data.daily_food) == 20
+
+
+@pytest.mark.asyncio
 async def test_food_complete_schedule_success_and_partial_when_one_meal_missing():
     client = FakePoiClient(nearby_results={("餐饮服务", "120.1,30.2", 2000): [poi(name="餐厅", category="餐饮服务")]})
     complete = await FoodAgent(client).run(request(days=1), (itinerary(1, attraction("上午", "西湖"), attraction("傍晚", "西湖")),), REQUEST_ID, REQUEST_ID)

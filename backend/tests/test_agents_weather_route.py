@@ -402,6 +402,20 @@ async def test_route_agent_does_not_consume_unassigned_candidates_across_days():
 
 
 @pytest.mark.asyncio
+async def test_route_agent_generates_itinerary_for_every_request_day():
+    pois = [attraction(f"景区{i}", location=f"120.{i},30.{i}") for i in range(40)]
+    amap = FakeAmapClient(
+        geocodes={"上海": {"name": "上海市", "location": "121,31", "adcode": "310000", **source_metadata(SourceType.map_api)}, "杭州": {"name": "杭州市", "location": "120,30", "adcode": "330100", **source_metadata(SourceType.map_api)}},
+        route={"distance_meters": 100, "duration_minutes": 1, **source_metadata(SourceType.map_api)},
+        routes={("121,31", "120,30"): {"distance_meters": 180000, "duration_minutes": 150, **source_metadata(SourceType.map_api)}, ("120,30", "121,31"): {"distance_meters": 181000, "duration_minutes": 151, **source_metadata(SourceType.map_api)}},
+        nearby_results={("风景名胜", "120,30", 50000): pois},
+    )
+    result = await RouteAgent(amap).run(request(days=10), weather_result(10), ids())
+    assert [item.day for item in result.data.daily_itineraries] == list(range(1, 11))
+    assert [item.day for item in result.data.daily_areas] == list(range(1, 11))
+
+
+@pytest.mark.asyncio
 async def test_route_agent_skips_malformed_poi_before_slot_assignment():
     bad = attraction("x" * 101, location="120,30")
     valid = attraction("有效景区", location="121,31")
@@ -840,6 +854,18 @@ def test_weather_marks_actual_missing_days_as_partial():
 
     assert result.status is AgentStatus.partial
     assert result.missing_fields == ("daily_forecast_days_3_to_3",)
+
+
+def test_weather_agent_returns_weather_for_full_request_days():
+    agent = WeatherAgent(
+        amap_client=FakeAmapClient(geocodes={"杭州": {"name": "杭州", "location": "120,30", "adcode": "330100", **source_metadata(SourceType.map_api)}}),
+        weather_client=FakeWeatherClient(weather_payload(days=10)),
+    )
+
+    result = __import__("asyncio").run(agent.run(request(days=10), **ids()))
+
+    assert result.status is AgentStatus.success
+    assert len(result.data.daily) == 10
 
 
 def test_route_degrades_when_downstream_payload_is_malformed():
