@@ -20,11 +20,15 @@ def _natural_end(content: str, start: int, limit: int) -> int:
     if maximum == len(content):
         return maximum
     window = content[start:maximum]
-    for boundary in ("\n\n", "。！？", "；，", "\n"):
-        positions = [window.rfind(character) for character in boundary]
-        position = max(positions)
-        if position >= 0:
-            return start + position + (2 if boundary == "\n\n" else 1)
+    paragraph_end = window.rfind("\n\n")
+    if paragraph_end >= 0:
+        return start + paragraph_end + 2
+    sentence_end = max(window.rfind(character) for character in "。！？；")
+    if sentence_end >= 0:
+        return start + sentence_end + 1
+    newline_end = window.rfind("\n")
+    if newline_end >= 0:
+        return start + newline_end + 1
     return maximum
 
 
@@ -76,7 +80,8 @@ def _chunk_text(
         ))
         if end == len(content):
             break
-        start = end - min(overlap, end - start)
+        next_start = end - min(overlap, end - start)
+        start = next_start if next_start > start else end
     return chunks
 
 
@@ -176,6 +181,8 @@ def chunk_extracted_content(
     """按文档结构、字符上限和重叠规则将提取内容转换为可追溯块。"""
     if max_chars > MAX_CHARS:
         raise ValueError(f"max_chars 不得超过 {MAX_CHARS}")
+    if overlap > OVERLAP:
+        raise ValueError(f"overlap 不得超过 {OVERLAP}")
     if max_chars <= 0 or not 0 <= overlap < max_chars:
         raise ValueError("分块参数无效")
 
@@ -193,7 +200,7 @@ def chunk_extracted_content(
             section = _section_name(tuple(item.get("section_path", ())))
         if chunk_type == "chart_ocr":
             prefix = f"章节：{section}\n图表 {item.get('source_figure', 1)}\n\n"
-        elif section != "正文" and "source_order" in item:
+        elif section != "正文":
             prefix = f"章节：{section}\n\n"
         else:
             prefix = ""

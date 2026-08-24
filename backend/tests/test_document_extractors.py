@@ -131,12 +131,110 @@ def test_chunking_chart_ocr_gets_its_own_context_and_text_overlap():
     assert [(chunk.source_section, chunk.source_figure) for chunk in chart_chunks] == [("行程", 4)] * len(chart_chunks)
 
 
-def test_chunking_rejects_a_limit_larger_than_document_chunk_contract():
+def test_chunking_rejects_a_limit_or_overlap_larger_than_contract():
     with pytest.raises(ValueError, match="不得超过 800"):
         chunk_extracted_content(
             document_id=uuid4(), document_name="报告.docx",
             items=[{"content": "正文", "chunk_type": "text"}], max_chars=801,
         )
+    with pytest.raises(ValueError, match="不得超过 100"):
+        chunk_extracted_content(
+            document_id=uuid4(), document_name="报告.docx",
+            items=[{"content": "正文", "chunk_type": "text"}], overlap=101,
+        )
+
+
+@pytest.mark.parametrize(
+    ("content", "max_chars", "expected_first"),
+    [
+        ("甲\n\n乙丙", 4, "甲\n\n"),
+        ("甲！乙丙", 3, "甲！"),
+        ("甲？乙丙", 3, "甲？"),
+        ("甲；乙丙", 3, "甲；"),
+        ("甲\n乙丙", 3, "甲\n"),
+        ("甲，乙丙", 3, "甲，乙"),
+    ],
+)
+def test_chunking_uses_required_natural_boundaries_without_comma(content, max_chars, expected_first):
+    chunks = chunk_extracted_content(
+        uuid4(), "报告.docx", [{"content": content, "chunk_type": "text"}],
+        max_chars=max_chars, overlap=0,
+    )
+
+    assert chunks[0].content == expected_first
+
+
+def test_chunking_uses_default_800_limit_and_advances_after_short_paragraph_boundary():
+    long_chunks = chunk_extracted_content(
+        uuid4(), "报告.docx", [{"content": "甲" * 900, "chunk_type": "text"}],
+    )
+    assert [len(chunk.content) for chunk in long_chunks] == [800, 200]
+
+    import threading
+
+    result: list[object] = []
+    worker = threading.Thread(
+        target=lambda: result.extend(chunk_extracted_content(
+            uuid4(), "报告.docx", [{"content": "甲\n\n乙丙", "chunk_type": "text"}],
+            max_chars=4, overlap=3,
+        )),
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout=0.2)
+
+    assert not worker.is_alive(), "短段落切点不得导致分块循环停滞"
+    assert [chunk.content for chunk in result] == ["甲\n\n", "乙丙"]
+    assert [(chunk.char_start, chunk.char_end) for chunk in result] == [(0, 3), (3, 5)]
+
+
+def test_chunking_prefixes_non_body_text_without_source_order():
+    chunks = chunk_extracted_content(
+        uuid4(), "报告.docx",
+        [{"content": "内容", "chunk_type": "text", "section_path": ("行程",), "source_section": "行程"}],
+    )
+
+    assert [chunk.content for chunk in chunks] == ["章节：行程\n\n内容"]
+
+
+def test_table_chunks_repeat_context_without_overlapping_complete_data_rows():
+    context = "章节：行程\n表格 1\n表头：项目"
+    rows = [f"第 {index} 行：项目=数据{index}" for index in range(2, 6)]
+    chunks = chunk_extracted_content(
+        uuid4(), "报告.docx",
+        [{"content": "\n".join([context, *rows]), "chunk_type": "table", "source_section": "行程", "source_table": 1}],
+        max_chars=35, overlap=5,
+    )
+
+    assert len(chunks) == 4
+    assert all(chunk.content.startswith(f"{context}\n") for chunk in chunks)
+    combined = "\n".join(chunk.content.removeprefix(f"{context}\n") for chunk in chunks)
+    assert all(combined.count(row) == 1 for row in rows)
+
+
+@pytest.mark.skipif(Document is None, reason="未安装 python-docx")
+def test_extract_docx_truncates_same_heading_level_and_recognizes_chinese_heading_style(tmp_path):
+    from docx.enum.style import WD_STYLE_TYPE
+
+    document = Document()
+    chinese_heading = document.styles.add_style("标题 2", WD_STYLE_TYPE.PARAGRAPH)
+    chinese_heading.base_style = document.styles["Heading 2"]
+    document.add_heading("一级甲", level=1)
+    document.add_heading("二级甲", level=2)
+    document.add_heading("二级乙", level=2)
+    document.add_heading("一级乙", level=1)
+    paragraph = document.add_paragraph("中文二级")
+    paragraph.style = chinese_heading
+    document.add_paragraph("正文")
+    path = tmp_path / "headings.docx"
+    document.save(path)
+
+    extracted = extract_docx(path, tmp_path / "extracted")
+
+    assert [item["section_path"] for item in extracted] == [
+        ("一级甲",), ("一级甲", "二级甲"), ("一级甲", "二级乙"),
+        ("一级乙",), ("一级乙", "中文二级"), ("一级乙", "中文二级"),
+    ]
 
 
 @pytest.mark.skipif(fitz is None, reason="未安装 PyMuPDF")
