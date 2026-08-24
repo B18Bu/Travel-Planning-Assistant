@@ -97,7 +97,7 @@
     error.textContent = "";
     error.hidden = true;
     currentId = null;
-    showView("home");
+    showView("plan");
     originInput.focus();
   }
 
@@ -261,7 +261,7 @@
       renderNav();
       closeTravelModal();
       setRequestError(requestError instanceof Error ? requestError.message : "请求失败，请稍后重试。");
-      showView("home");
+      showView("plan");
     } finally {
       if (generation === requestGeneration) requestController = null;
     }
@@ -313,12 +313,16 @@
   function showView(name) {
     activeView = name;
     if (name !== "library") cancelLibraryRequests();
-    if (name !== "home") knowledgeRequestGeneration += 1;
+    if (name !== "guide") knowledgeRequestGeneration += 1;
     document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === `view-${name}`));
     const dashboard = document.getElementById("nav-dashboard");
     const library = document.getElementById("nav-library");
+    const plan = document.getElementById("nav-plan");
+    const guide = document.getElementById("nav-guide");
     if (dashboard) dashboard.classList.toggle("active", name === "dashboard");
     if (library) library.classList.toggle("active", name === "library");
+    if (plan) plan.classList.toggle("active", name === "plan");
+    if (guide) guide.classList.toggle("active", name === "guide");
     if (name === "dashboard") loadDashboardStats();
     if (name === "library") loadDocuments();
     if (name !== "dashboard") renderNav();
@@ -1064,7 +1068,7 @@
       });
       if (!response.ok) throw new Error(await nonOkMessage(response));
       const payload = await response.json();
-      if (generation !== knowledgeRequestGeneration || activeView !== "home") return;
+      if (generation !== knowledgeRequestGeneration || activeView !== "guide") return;
       renderKnowledgeResults(Array.isArray(payload.results) ? payload.results : []);
       if (Array.isArray(payload.results) && payload.results.length) {
         const task = {
@@ -1094,7 +1098,7 @@
         renderFeedback(task, knowledgeResults);
       }
     } catch (requestError) {
-      if (generation !== knowledgeRequestGeneration || activeView !== "home") return;
+      if (generation !== knowledgeRequestGeneration || activeView !== "guide") return;
       knowledgeResults.replaceChildren();
       const message = document.createElement("p");
       message.textContent = `知识检索服务不可用：${documentErrorMessage(requestError, "请稍后重试。")}`;
@@ -1148,9 +1152,8 @@
         return;
       }
       homeView.style.zoom = "";
-      const navPane = homeView.querySelector(".home-nav-pane");
       const welcome = homeView.querySelector(".home-welcome");
-      const natural = (navPane ? navPane.scrollHeight : 0) + (welcome ? welcome.offsetHeight : 0) + 48;
+      const natural = (welcome ? welcome.offsetHeight : 0) + 48;
       const available = mainEl.clientHeight;
       if (available > 0 && natural > available) {
         const ratio = Math.max(0.55, Math.min(1, available / natural));
