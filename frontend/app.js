@@ -823,6 +823,7 @@
       });
       if (!response.ok) throw new Error(await nonOkMessage(response));
       const payload = await response.json();
+      if (generation !== knowledgeRequestGeneration || activeView !== "guide") return;
       task.answer = payload.answer;
       task.answerStatus = payload.answer_status;
       task.results = payload.results || task.results;
@@ -840,14 +841,14 @@
         button.parentElement.appendChild(hint);
       }
     } catch (requestError) {
-      if (generation !== knowledgeRequestGeneration) return;
+      if (generation !== knowledgeRequestGeneration || activeView !== "guide") return;
       button.textContent = originalText;
       const hint = document.createElement("p");
       hint.className = "answer-hint";
       hint.textContent = `生成失败：${documentErrorMessage(requestError, "请稍后重试。")}`;
       button.parentElement.appendChild(hint);
     } finally {
-      button.disabled = false;
+      if (generation === knowledgeRequestGeneration && activeView === "guide" && button.isConnected) button.disabled = false;
     }
   }
 
