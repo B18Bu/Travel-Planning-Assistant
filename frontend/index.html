@@ -68,6 +68,8 @@
         </div>
       </div>
 
+      <div class="side-section"><div class="side-label">功能</div><button class="side-nav" id="nav-plan" onclick="showView('plan')"><span>🧭</span> 行程规划</button><button class="side-nav" id="nav-guide" onclick="showView('guide')"><span>🔎</span> 攻略查询</button></div>
+
       <div class="side-section">
         <div class="side-label">管理</div>
         <button class="side-nav" id="nav-dashboard" onclick="showView('dashboard')">
@@ -88,7 +90,7 @@
     <!-- 右侧主内容 -->
     <main class="main" tabindex="-1">
 
-      <!-- 首页：统一导航窗格 -->
+      <!-- 首页 -->
       <section id="view-home" class="view active">
         <div class="home">
           <div class="home-welcome">
@@ -96,10 +98,18 @@
             <h2>欢迎使用智能文旅策划助手</h2>
             <p>统一入口承载出行规划、数字人服务与目的地知识检索</p>
           </div>
+        </div>
+      </section>
 
-          <div class="home-nav-pane journey-panel">
-            <!-- 左侧：出行规划 -->
-            <div class="home-zone home-plan-zone">
+      <section id="view-plan" class="view">
+        <div class="feature-page">
+          <div class="feature-page-head">
+            <div>Trip Planning</div>
+            <h2>行程规划</h2>
+            <p>填写出行信息，生成交通、景点、美食与行程建议。</p>
+          </div>
+          <div class="feature-split feature-split-plan">
+            <div class="feature-visual">
               <div class="travel-window" aria-hidden="true">
                 <div class="travel-slide is-active" data-travel-index="0" data-image-base="travel-mountain">
                   <div class="travel-sky"></div>
@@ -128,13 +138,8 @@
                   <span class="travel-dot" data-travel-dot="2"></span>
                 </div>
               </div>
-
-              <div class="zone-head">
-                <div class="zone-kicker">Trip Planning</div>
-                <h3>出行规划</h3>
-                <p>输入始发地与目的地，生成交通、景点、美食与行程建议。</p>
-              </div>
-
+            </div>
+            <div class="feature-action">
               <form class="route-form" id="travel-form">
                 <div class="route-fields">
                   <input id="home-origin" name="origin" placeholder="始发地，如：北京" required maxlength="100">
@@ -153,11 +158,19 @@
                 <button class="btn-primary btn-block" type="submit">生成方案</button>
               </form>
             </div>
+          </div>
+        </div>
+      </section>
 
-            <div class="pane-divider" aria-hidden="true"></div>
-
-            <!-- 右侧：数字人与自定义搜索 -->
-            <div class="home-zone home-service-zone">
+      <section id="view-guide" class="view">
+        <div class="feature-page">
+          <div class="feature-page-head">
+            <div>Knowledge Search</div>
+            <h2>攻略查询</h2>
+            <p>检索已收录目的地攻略，查看景点、美食与行程来源。</p>
+          </div>
+          <div class="feature-split feature-split-guide">
+            <div class="feature-visual">
               <div class="digital-human-card">
                 <div class="avatar-orbit">
                   <div class="avatar-core">数字人</div>
@@ -173,7 +186,8 @@
                   <p>用于接入景区讲解、问答陪伴与多模态导览能力。</p>
                 </div>
               </div>
-
+            </div>
+            <div class="feature-action">
               <div class="search-card">
                 <div class="zone-head">
                   <div class="zone-kicker">Knowledge Search</div>
