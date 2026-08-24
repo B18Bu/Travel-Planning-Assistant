@@ -1,7 +1,7 @@
 # DOCX 结构化分块与检索优化设计
 
 **日期：** 2026-08-24  
-**状态：** 已确认方案，待用户审查书面规格  
+**状态：** 已实现并通过后端测试  
 **范围：** 仅优化既有文档库 RAG 中 DOCX 的结构提取、结构感知分块、混合检索候选数量和文档范围过滤；不改变旅行规划链路、前端布局、嵌入模型或 Chroma 存储边界。
 
 ---
@@ -266,3 +266,8 @@ search_chunks(ready_chunks, parsed_query, limit=fetch_limit, document_ids=payloa
 | `backend/tests/test_config.py` | 检索上限默认值与配置边界测试 |
 
 不修改 `frontend/`、旅行规划 Agent 或外部地图/天气服务。
+
+
+## 9. 实现验证
+
+已执行：`PYTHONPATH=backend python -m pytest backend/tests -q`（918 passed）。
