@@ -380,3 +380,30 @@ def test_extract_pdf_with_pymupdf_returns_page_text_and_exports_images(tmp_path)
     assert image["source_page"] == 1
     assert image["source_figure"] == 1
     assert (tmp_path / "extracted" / image["image_path"]).exists()
+
+
+def test_chunking_covers_non_semantic_table_content_without_silent_truncation():
+    content = "表格" * 500
+
+    chunks = chunk_extracted_content(
+        uuid4(), "报告.docx", [{"content": content, "chunk_type": "table"}],
+    )
+
+    assert len(chunks) >= 2
+    assert all(chunk.chunk_type == "table" and len(chunk.content) <= 800 for chunk in chunks)
+    assert all(chunk.content == content[chunk.char_start:chunk.char_end] for chunk in chunks)
+    assert (chunks[0].char_start, chunks[-1].char_end) == (0, len(content))
+    assert all(later.char_start <= earlier.char_end for earlier, later in zip(chunks, chunks[1:]))
+
+
+def test_chunking_covers_incomplete_table_metadata_without_row_format_error():
+    content = "章节：行程\n表格 1\n" + "甲" * 900
+
+    chunks = chunk_extracted_content(
+        uuid4(), "报告.docx",
+        [{"content": content, "chunk_type": "table", "source_section": "行程", "source_table": 1}],
+    )
+
+    assert all(chunk.chunk_type == "table" and len(chunk.content) <= 800 for chunk in chunks)
+    assert all(chunk.content == content[chunk.char_start:chunk.char_end] for chunk in chunks)
+    assert (chunks[0].char_start, chunks[-1].char_end) == (0, len(content))

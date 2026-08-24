@@ -110,10 +110,16 @@ def _chunk_text(
     return chunks
 
 
-def _table_context(content: str, max_chars: int) -> tuple[str, list[str]]:
+def _table_context(content: str, max_chars: int) -> tuple[str, list[str]] | None:
+    """拆出表格的三行语义上下文与数据行；缺少语义元数据时返回 None。"""
     lines = content.splitlines()
-    if len(lines) < 3:
-        return content[:max_chars - 1], []
+    if (
+        len(lines) < 3
+        or not lines[0].startswith("章节：")
+        or not lines[1].startswith("表格 ")
+        or not lines[2].startswith("表头：")
+    ):
+        return None
     section = lines[0].removeprefix("章节：")
     metadata = f"\n{lines[1]}\n{lines[2]}"
     prefix = _prefix_with_section(section, metadata, max_chars)
@@ -129,8 +135,13 @@ def _chunk_table(
     content: str,
     item: dict,
     max_chars: int,
+    overlap: int,
 ) -> list[DocumentChunk]:
-    context, rows = _table_context(content, max_chars)
+    parsed = _table_context(content, max_chars)
+    if parsed is None:
+        # 表格文本缺少语义元数据时退回逐段字符分块，保证内容完整覆盖而非截断。
+        return _chunk_text(document_id, document_name, content, item, max_chars, overlap)
+    context, rows = parsed
     chunks: list[DocumentChunk] = []
     pending: list[tuple[str, int, int]] = []
     source_offset = 0
@@ -232,7 +243,7 @@ def chunk_extracted_content(
         item = group[0]
         chunk_type = item["chunk_type"]
         if chunk_type == "table":
-            chunks.extend(_chunk_table(document_id, document_name, item["content"], item, max_chars))
+            chunks.extend(_chunk_table(document_id, document_name, item["content"], item, max_chars, overlap))
             continue
 
         content = "\n\n".join(entry["content"] for entry in group)
