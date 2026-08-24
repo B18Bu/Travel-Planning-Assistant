@@ -149,28 +149,31 @@
   .main { flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px 24px 40px; }
   .view { display: none; }
   .view.active { display: block; animation: viewIn .38s ease both; }
-  #view-home.active { height: 100%; min-height: 0; overflow: hidden; }
+  #view-home.active { min-height: 0; }
   @keyframes viewIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
-  /* ============ 首页 · 统一导航窗格 ============ */
+  /* ============ 欢迎页与功能工作区 ============ */
   .home {
     max-width: 1080px; margin: 0 auto; padding-top: 8px;
-    height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
   }
-  .home-welcome { text-align: center; margin-bottom: 32px; width: 100%; flex-shrink: 0; }
+  .home-welcome { text-align: center; margin-bottom: 32px; width: 100%; }
   .home-eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 3px; margin-bottom: 8px; }
   .home-welcome h2 { font-size: 42px; font-weight: 800; color: var(--accent); letter-spacing: 1px; }
   .home-welcome p { color: var(--text-dim); margin-top: 8px; font-size: 14px; }
-  .home-nav-pane {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 24px;
-    box-shadow: var(--shadow); padding: 32px; display: grid; grid-template-columns: minmax(0, 1.08fr) 1px minmax(0, .92fr); gap: 30px;
-    flex: 1; min-height: 0; overflow: hidden;
-  }
-  .home-zone { min-width: 0; display: flex; flex-direction: column; }
-  .home-plan-zone { min-height: 0; overflow-y: auto; }
-  .home-service-zone { min-height: 0; overflow: hidden; }
-  .digital-human-card, .search-card { flex-shrink: 0; }
-  .pane-divider { border-left: 1px dashed #D1D5DB; min-height: 100%; }
+  .feature-page { max-width: 1080px; margin: 8px auto 0; }
+  .feature-page-head { margin-bottom: 20px; }
+  .feature-page-head h2 { margin-top: 6px; font-size: 28px; }
+  .feature-page-head p { margin-top: 7px; color: var(--text-dim); font-size: 13px; line-height: 1.7; }
+  .feature-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .92fr); gap: 24px; align-items: start; }
+  .feature-visual, .feature-action { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 22px; box-shadow: var(--shadow); }
+  .feature-split-plan .feature-visual { display: flex; flex-direction: column; }
+  .feature-split-plan .travel-window { height: 320px; }
+  .feature-split-plan .route-form { margin-top: 0; }
+  .feature-split-guide .feature-visual { display: flex; }
+  .feature-split-guide .digital-human-card { width: 100%; min-height: 280px; }
+  .feature-split-guide .search-card { padding: 0; border: 0; box-shadow: none; background: transparent; }
+  .feature-split-guide .knowledge-panel { margin-top: 18px; min-height: 280px; }
+  .feature-split-guide .feature-action { display: flex; flex-direction: column; min-height: 0; }
   .travel-window {
     position: relative; height: 210px; overflow: hidden; border-radius: 20px;
     background: linear-gradient(180deg, #dbeafe 0%, #eff6ff 58%, #dbeafe 100%);
@@ -247,7 +250,6 @@
   .btn-block { width: 100%; }
   .quick-row { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
   .quick-row .side-label { margin-bottom: 10px; }
-  .home-service-zone { gap: 20px; }
   .digital-human-card, .search-card {
     background: linear-gradient(180deg, #ffffff, #f8fbff); border: 1px solid var(--border); border-radius: 18px;
     padding: 22px; box-shadow: 0 10px 28px rgba(37,99,235,.06);
@@ -557,6 +559,8 @@
 
   @media (max-width: 768px) {
     .task-result-layout { grid-template-columns: 1fr; }
+    .feature-split { grid-template-columns: 1fr; }
+    .feature-page { margin-top: 0; }
   }
   @media (max-width: 750px) {
     .intro { overflow-y: auto; padding: 28px 22px; }
@@ -570,10 +574,6 @@
   }
 
   /* ============ 响应式 ============ */
-  @media (max-width: 1200px) {
-    .journey-panel { grid-template-columns: 1fr; gap: 24px; }
-    .pane-divider { border-left: none; border-top: 1px dashed #D1D5DB; min-height: 0; width: 100%; }
-  }
   @media (max-width: 1024px) {
     .shell { flex-direction: column; }
     .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 14px; border-right: none; border-bottom: 1px solid var(--border); }
@@ -583,9 +583,10 @@
   }
   @media (max-width: 640px) {
     .main { padding: 14px 14px 32px; }
-    .home-nav-pane { padding: 20px; border-radius: 18px; }
+    .feature-visual, .feature-action { padding: 16px; border-radius: 14px; }
+    .feature-split-plan .travel-window { height: 170px; }
+    .feature-split-guide .digital-human-card { min-height: 220px; }
     .home-welcome h2 { font-size: 30px; }
-    .travel-window { height: 170px; }
     .route-fields { flex-direction: column; align-items: stretch; }
     .route-arrow { transform: rotate(90deg); align-self: center; }
     .digital-human-card { grid-template-columns: 1fr; text-align: center; }
