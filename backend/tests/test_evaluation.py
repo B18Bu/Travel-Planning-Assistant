@@ -41,3 +41,9 @@ class FakeDeepSeek:
 async def test_judge_faithfulness_parses_supported_ratio():
     judge = Judge(FakeDeepSeek("1|支持|a\n2|支持|b\n3|不支持|c"))
     assert await judge.faithfulness("q", "答", []) == pytest.approx(2 / 3)
+
+
+@pytest.mark.asyncio
+async def test_judge_context_precision_unparseable_returns_none():
+    judge = Judge(FakeDeepSeek("完全无法解析的输出"))
+    assert await judge.context_precision("q", []) is None

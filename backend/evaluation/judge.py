@@ -5,7 +5,6 @@ import re
 from typing import Any, Sequence
 
 from app.services.deepseek import DeepSeekClient
-from app.services.resilience import ExternalServiceUnavailable
 
 _SYSTEM = (
     "你是严谨的 RAG 质量评估裁判。只依据给定材料与规则判断，"
@@ -113,6 +112,8 @@ class Judge:
         )
         raw = await self._ask(prompt)
         pairs = _parse_pair_lines(raw, "相关", "不相关")
+        if not pairs:
+            return None
         relevant = {num for num, ok in pairs if ok}
         return _context_precision(relevant, len(context_results))
 
