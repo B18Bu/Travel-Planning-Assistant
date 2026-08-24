@@ -32,6 +32,17 @@ def _natural_end(content: str, start: int, limit: int) -> int:
     return maximum
 
 
+def _compact_section(section: object, limit: int = 100) -> str | None:
+    if not isinstance(section, str) or not section:
+        return None
+    if len(section) <= limit:
+        return section
+    last_section = section.rsplit(" > ", 1)[-1]
+    if len(last_section) >= limit:
+        return last_section[-limit:]
+    return f"… > {last_section}"[-limit:]
+
+
 def _make_chunk(
     document_id: UUID,
     document_name: str,
@@ -48,7 +59,7 @@ def _make_chunk(
         chunk_type=item["chunk_type"],
         document_name=document_name,
         source_page=item.get("source_page"),
-        source_section=item.get("source_section"),
+        source_section=_compact_section(item.get("source_section")),
         source_table=item.get("source_table"),
         source_figure=item.get("source_figure"),
         image_path=item.get("image_path"),
@@ -60,9 +71,13 @@ def _make_chunk(
 def _prefix_with_section(section: str, suffix: str, max_chars: int) -> str:
     """压缩来源前缀，保留末级标题并为正文至少留一个字符。"""
     last_section = section.rsplit(" > ", 1)[-1]
-    available = max_chars - len(suffix) - 1
+    fixed = len("章节：") + len(suffix)
+    available = max_chars - fixed - 1
+    if available < len(last_section):
+        suffix = ""
+        available = max_chars - len("章节：") - 1
     if available <= 0:
-        return ""
+        return last_section[-max_chars:]
     return f"章节：{last_section[-available:]}{suffix}"
 
 
@@ -177,13 +192,16 @@ def _structured_text_groups(items: list[dict]) -> list[list[dict]]:
         chunk_type = item.get("chunk_type")
         if chunk_type not in {"text", "table", "chart_ocr"}:
             raise ValueError("未知块类型")
+        previous = groups[-1][-1] if groups else None
+        orders_are_discontinuous = (
+            isinstance(item.get("source_order"), int)
+            and isinstance(previous.get("source_order"), int) if previous else False
+        ) and item["source_order"] != previous["source_order"] + 1
         if (
             chunk_type == "text"
             and groups
             and groups[-1][0].get("chunk_type") == "text"
-            and isinstance(item.get("source_order"), int)
-            and isinstance(groups[-1][-1].get("source_order"), int)
-            and item["source_order"] == groups[-1][-1]["source_order"] + 1
+            and not orders_are_discontinuous
             and tuple(item.get("section_path", ())) == tuple(groups[-1][0].get("section_path", ()))
         ):
             groups[-1].append(item)
@@ -238,16 +256,20 @@ def _heading_level(style_name: str) -> int | None:
     return int(match.group(1)) if match else 0
 
 
+def _single_line_cell_text(value: str) -> str:
+    return " ".join(value.split())
+
+
 def _format_table(table, section: str, table_index: int) -> str:
-    header_index = next((index for index, row in enumerate(table.rows, start=1) if any(cell.text.strip() for cell in row.cells)), None)
+    header_index = next((index for index, row in enumerate(table.rows, start=1) if any(_single_line_cell_text(cell.text) for cell in row.cells)), None)
     if header_index is None:
         return ""
-    header_cells = [cell.text.strip() for cell in table.rows[header_index - 1].cells]
+    header_cells = [_single_line_cell_text(cell.text) for cell in table.rows[header_index - 1].cells]
     headers = [value or f"第 {index} 列" for index, value in enumerate(header_cells, start=1)]
     lines = [f"章节：{section}", f"表格 {table_index}", f"表头：{' | '.join(headers)}"]
     data_row_index = 0
     for row in table.rows[header_index:]:
-        values = [cell.text.strip() for cell in row.cells]
+        values = [_single_line_cell_text(cell.text) for cell in row.cells]
         if not any(values):
             continue
         data_row_index += 1

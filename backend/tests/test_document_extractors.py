@@ -256,6 +256,53 @@ def test_table_chunk_offsets_follow_original_row_body_and_ignore_continuation_la
     assert all(second_start <= chunk.char_start < chunk.char_end <= second_start + len(second) for chunk in chunks[1:])
 
 
+def test_chunking_keeps_compact_last_section_and_safe_source_section_for_tiny_limits():
+    section = "前级" * 80 + " > 末级标题"
+    items = [
+        {"content": "正文", "chunk_type": "text", "source_section": section},
+        {"content": "图正文", "chunk_type": "chart_ocr", "source_section": section, "source_figure": 1},
+        {"content": f"章节：{section}\n表格 1\n表头：列\n第 1 行：列=值", "chunk_type": "table", "source_section": section, "source_table": 1},
+    ]
+
+    chunks = chunk_extracted_content(uuid4(), "报告.docx", items, max_chars=15, overlap=0)
+
+    assert all(0 < len(chunk.content) <= 15 for chunk in chunks)
+    assert all("末级标题" in chunk.content and "末级标题" in chunk.source_section for chunk in chunks)
+    assert all(len(chunk.source_section) <= 100 for chunk in chunks)
+
+
+def test_chunking_aggregates_adjacent_same_section_text_without_source_order():
+    chunks = chunk_extracted_content(
+        uuid4(), "报告.docx",
+        [
+            {"content": "甲", "chunk_type": "text", "section_path": ("行程",), "source_section": "行程"},
+            {"content": "乙", "chunk_type": "text", "section_path": ("行程",), "source_section": "行程"},
+            {"content": "丙", "chunk_type": "text", "section_path": ("行程",), "source_section": "行程", "source_order": 3},
+            {"content": "丁", "chunk_type": "text", "section_path": ("行程",), "source_section": "行程", "source_order": 5},
+        ],
+    )
+
+    assert [chunk.content for chunk in chunks] == ["章节：行程\n\n甲\n\n乙\n\n丙", "章节：行程\n\n丁"]
+
+
+@pytest.mark.skipif(Document is None, reason="未安装 python-docx")
+def test_extract_docx_flattens_cell_newlines_before_table_chunking(tmp_path):
+    document = Document()
+    table = document.add_table(rows=2, cols=1)
+    table.cell(0, 0).text = "项目"
+    table.cell(1, 0).text = "古城\n夜游"
+    path = tmp_path / "multiline-table.docx"
+    document.save(path)
+
+    extracted = extract_docx(path, tmp_path / "extracted")
+    table_item = next(item for item in extracted if item["chunk_type"] == "table")
+    chunks = chunk_extracted_content(uuid4(), "报告.docx", [table_item], max_chars=25, overlap=0)
+
+    assert table_item["content"] == "章节：正文\n表格 1\n表头：项目\n第 1 行：项目=古城 夜游"
+    assert all("第 1 行：" not in chunk.content or "\n夜游" not in chunk.content for chunk in chunks)
+    assert all(len(chunk.content) <= 25 for chunk in chunks)
+
+
 @pytest.mark.skipif(Document is None, reason="未安装 python-docx")
 def test_extract_docx_truncates_same_heading_level_and_recognizes_chinese_heading_style(tmp_path):
     from docx.enum.style import WD_STYLE_TYPE
