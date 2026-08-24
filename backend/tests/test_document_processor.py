@@ -35,6 +35,11 @@ class FailingQwen:
         return {"text": None, "degraded": True, "failure_message": "Qwen-VL 图表识别失败"}
 
 
+class RaisingQwen:
+    async def recognize_chart(self, image_bytes, media_type):
+        raise RuntimeError("Qwen-VL 服务不可用")
+
+
 class NoMinerU:
     async def submit_task(self, _url):
         raise AssertionError("没有受控公开 URL 时不应提交 MinerU")
@@ -235,3 +240,26 @@ async def test_processor_cleans_vectors_and_records_controlled_failure_when_chro
     assert saved.failure_message == "文档内容无法处理"
     assert chroma.deleted == [document_id]
     assert r"C:\\private" not in saved.failure_message
+
+
+@pytest.mark.asyncio
+async def test_processor_keeps_text_and_table_chunks_when_single_chart_ocr_raises(tmp_path, monkeypatch):
+    store = DocumentStore(tmp_path)
+    document_id = uuid4()
+    store.create_document(make_record(document_id), b"docx")
+    monkeypatch.setattr(
+        "app.services.document_processor.extract_docx",
+        lambda *_args: [
+            {"content": "成都亲子游正文", "chunk_type": "text"},
+            {"content": "章节：正文\n表格 1\n表头：日期\n第 1 行：日期=第一天", "chunk_type": "table", "source_table": 1},
+            {"content": "", "chunk_type": "chart_ocr", "source_figure": 1, "image_path": "figure-1.png", "image_bytes": b"png"},
+        ],
+    )
+    chroma = FakeChroma()
+
+    await DocumentProcessor(store, NoMinerU(), RaisingQwen(), chroma).process(document_id)
+
+    saved = store.get_document(document_id)
+    assert saved.status is DocumentStatus.ready
+    assert (saved.text_chunk_count, saved.table_chunk_count, saved.chart_ocr_chunk_count) == (1, 1, 0)
+    assert [chunk.chunk_type for chunk in chroma.upserted] == ["text", "table"]

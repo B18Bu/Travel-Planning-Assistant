@@ -146,7 +146,11 @@ class DocumentProcessor:
             media_type = mimetypes.guess_type(image_path or "")[0]
             if not isinstance(image_bytes, bytes) or media_type not in {"image/png", "image/jpeg", "image/webp"}:
                 continue
-            result = await self.qwen_vl.recognize_chart(image_bytes, media_type)
+            try:
+                result = await self.qwen_vl.recognize_chart(image_bytes, media_type)
+            except Exception:
+                # 单张图片 OCR 失败仅跳过该图，正文与表格块仍需正常入库。
+                continue
             text = result.get("text") if isinstance(result, dict) else None
             if isinstance(text, str) and text.strip():
                 normalized.append({key: value for key, value in item.items() if key != "image_bytes"} | {"content": text.strip()})
