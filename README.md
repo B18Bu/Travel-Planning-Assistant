@@ -86,7 +86,7 @@
 | `backend/app/agents/weather.py` | 根据天气生成风险等级、活动约束和天气结果 | 请求 + 天气客户端 → 天气 Agent 结果 |
 | `backend/app/agents/route.py` | 按天气风险选择风景名胜或室内文化场所，生成上午、下午、傍晚景区行程、约 120 分钟建议时长和景区间驾车预估 | 请求 + 天气结果 → 路线 Agent 结果 |
 | `backend/app/agents/lodging.py` | 按推荐活动区域查询住宿服务 POI，只输出位置和筛选建议 | 请求 + 每日区域 → 住宿 Agent 结果 |
-| `backend/app/agents/food.py` | 按上午景区提供午餐、按傍晚景区（缺失时回退下午景区）提供晚餐，并查询景区附近餐饮 POI；保留无结果日期 | 请求 + 每日景区行程 → 餐饮 Agent 结果 |
+| `backend/app/agents/food.py` | 按上午景区提供午餐、按傍晚景区（缺失时回退下午景区）提供晚餐，查询景区附近餐饮 POI 并提取推荐菜品；保留无结果日期 | 请求 + 每日景区行程 → 餐饮 Agent 结果 |
 | `backend/app/agents/summary.py` | 聚合四个结果，去重来源、拼接警告、确定顶层状态并生成 Markdown | 四个 Agent 结果 → 最终文档 |
 | `backend/app/orchestration/sequential.py` | 固定天气 → 路线 → 住宿 → 餐饮 → 汇总顺序；单个 Agent 异常转为受控失败 | 请求 → 最终文档 |
 | `frontend/app.js` | 校验表单、调用相对路径 API、显示用户可读错误和净化 Markdown | 表单 → 页面结果 |
@@ -110,7 +110,7 @@
 - POI 文本搜索端点：`GET /v5/place/text`，参数 `keywords=<住宿服务或餐饮服务>`、`region=<城市或区域>`、`city_limit=true`、`key=<AMAP_API_KEY>`。`region` 限定搜索区域，`city_limit=true` 禁止跨城扩散。
 - 附近 POI 端点：`GET /v5/place/around`，参数 `keywords=餐饮服务`、`location=<景区经纬度>`、`radius=2000`、`key=<AMAP_API_KEY>`。餐饮 Agent 仅在景区坐标为非空字符串时调用，半径由后端固定为 2000 米。
 - Route Agent 常规天气查询 `风景名胜`；高风险天气优先查询 `博物馆`、`美术馆`、`展馆`，并在行程中标注室内文化场所提醒。每日按上午、下午、傍晚安排，单个景区建议约 120 分钟；候选不足或景区间驾车预估不可用时明确列出待补字段并降级，不复用候选或伪造结果。
-- 供应商原始字段不会透传到 API 响应；POI 仅保留名称、地址、经纬度、类别和内部来源标识。餐饮展示真实名称和地址，不展示评分、推荐指数或招牌菜。
+- 供应商原始字段不会透传到 API 响应；POI 仅保留名称、地址、经纬度、类别、标签（tags）和内部来源标识。餐饮展示真实名称、地址，以及来自地图 POI 标签提取、菜系兜底的推荐菜品；不展示评分与推荐指数。
 
 ## 数据合同与安全边界
 

@@ -170,6 +170,46 @@ class FoodAgent:
             trace_id=trace_id,
         )
 
+    _MAX_SPECIALTIES = 5
+    _MAX_SPECIALTY_LENGTH = 20
+    _GENERIC_CUISINE_LABELS = {
+        "餐饮服务", "美食", "中餐厅", "西餐厅", "日餐厅", "快餐厅", "咖啡厅", "酒吧", "食堂", "小吃", "甜品", "面包店",
+    }
+
+    @classmethod
+    def _specialties(cls, item: dict[str, Any]) -> tuple[str, ...]:
+        """从 POI tags 提取菜品/招牌词；无则回退分类第三级菜系。"""
+        collected: list[str] = []
+        raw_tags = item.get("tags")
+        if isinstance(raw_tags, (list, tuple)):
+            for tag in raw_tags:
+                if not isinstance(tag, str):
+                    continue
+                text = tag.strip()
+                if not text or len(text) > cls._MAX_SPECIALTY_LENGTH or text in collected:
+                    continue
+                collected.append(text)
+                if len(collected) >= cls._MAX_SPECIALTIES:
+                    break
+        if not collected:
+            cuisine = cls._cuisine(item.get("category"))
+            if cuisine:
+                collected.append(cuisine)
+        return tuple(collected)
+
+    @classmethod
+    def _cuisine(cls, category: object) -> str | None:
+        """提取高德 type 第三级菜系（如 川菜馆），过滤通用餐饮标签。"""
+        if not isinstance(category, str):
+            return None
+        parts = [part.strip() for part in category.split(";") if part.strip()]
+        if not parts:
+            return None
+        last = parts[-1]
+        if last in cls._GENERIC_CUISINE_LABELS or len(last) > cls._MAX_SPECIALTY_LENGTH:
+            return None
+        return last
+
     async def _plan_meal(
         self,
         request: TravelPlanRequest,
@@ -220,7 +260,7 @@ class FoodAgent:
                         poi_item = dict(item)
                         poi_item["name"] = raw_name[:100]
                     try:
-                        candidate = FoodCandidate(poi=self._poi(poi_item, "amap:food", "餐饮服务"))
+                        candidate = FoodCandidate(poi=self._poi(poi_item, "amap:food", "餐饮服务"), specialties=self._specialties(poi_item))
                     except (KeyError, TypeError, ValueError, ValidationError):
                         continue
                     if isinstance(raw_name, str) and len(raw_name) > 100:

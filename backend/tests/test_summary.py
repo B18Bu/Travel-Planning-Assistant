@@ -115,7 +115,7 @@ def test_summary_markdown_renders_daily_itinerary_and_food_details_without_raw_f
     )
     food_data = FoodPlanData(daily_food=(
         DailyFoodPlan(day=1, area="故宫", meal_period="午餐", nearby_attraction_name="故宫",
-                      candidates=(FoodCandidate(poi=PoiCandidate(name="宫廷菜", address="午餐地址", category="餐馆", source_ids=("f",))),)),
+                      candidates=(FoodCandidate(poi=PoiCandidate(name="宫廷菜", address="午餐地址", category="餐馆", source_ids=("f",)), specialties=("东坡肉", "龙井虾仁")),)),
         DailyFoodPlan(day=1, area="天坛", meal_period="晚餐", nearby_attraction_name="天坛",
                       filter_suggestions=("请核验官方信息",)),
         DailyFoodPlan(day=2, area="颐和园", meal_period="午餐", nearby_attraction_name="颐和园",
@@ -128,10 +128,10 @@ def test_summary_markdown_renders_daily_itinerary_and_food_details_without_raw_f
     food = result("food", AgentStatus.success, food_data)
     document = SummaryAgent().run(values[0], route, values[2], food, request_id=REQUEST_ID, trace_id=REQUEST_ID)
     markdown = document.markdown
-    for text in ("### 今日出游提醒", "午后有雨，携带雨具", "## 第 1 天 · 北京", "### 上午 · 故宫", "建议游玩约 120 分钟", "故宫地址", "### 下午 · 天坛", "驾车约 18 分钟、约 4200 米", "### 第 1 天 · 午餐 · 故宫附近", "宫廷菜", "午餐地址", "### 第 1 天 · 晚餐 · 天坛附近", "### 第 2 天 · 午餐 · 颐和园附近", "### 第 2 天 · 晚餐 · 颐和园附近", "营业时间、菜品与服务安排请以商家官方信息为准。"):
+    for text in ("### 今日出游提醒", "午后有雨，携带雨具", "## 第 1 天 · 北京", "### 上午 · 故宫", "建议游玩约 120 分钟", "故宫地址", "### 下午 · 天坛", "驾车约 18 分钟、约 4200 米", "### 第 1 天 · 午餐 · 故宫附近", "宫廷菜", "午餐地址", "推荐菜品：东坡肉、龙井虾仁", "### 第 1 天 · 晚餐 · 天坛附近", "### 第 2 天 · 午餐 · 颐和园附近", "### 第 2 天 · 晚餐 · 颐和园附近", "营业时间、菜品与服务安排请以商家官方信息为准。"):
         assert text in markdown
     assert markdown.count("营业时间、菜品与服务安排请以商家官方信息为准。") == 4
-    for forbidden in ("rating", "score", "招牌菜", "开放时间"):
+    for forbidden in ("rating", "score", "开放时间"):
         assert forbidden not in markdown
 
 

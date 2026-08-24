@@ -40,7 +40,7 @@ async def test_maps_fixed_endpoints_and_allowed_fields():
     assert poi.calls[0].request.url.params["key"] == "amap-key"
     assert set(location) == {"name", "location", "adcode", "data_status", "source_updated_at", "retrieved_at"}
     assert set(route_result) == {"distance_meters", "duration_minutes", "data_status", "source_updated_at", "retrieved_at"}
-    assert set(pois[0]) == {"name", "address", "location", "category", "data_status", "source_updated_at", "retrieved_at"}
+    assert set(pois[0]) == {"name", "address", "location", "category", "tags", "data_status", "source_updated_at", "retrieved_at"}
     assert location["source_updated_at"] is None and route_result["source_updated_at"] is None
     assert location["retrieved_at"].tzinfo == timezone.utc
     assert route_result["duration_minutes"] == 10 and pois[0]["category"] == "住宿服务"
@@ -70,7 +70,7 @@ async def test_poi_cache_hit_has_ttl_metadata_and_no_raw_payload():
     cached_value = next(iter(cache._entries.values()))[0]
     assert set(cached_value) == {"data", "data_status", "source_updated_at", "retrieved_at"}
     assert isinstance(cached_value["data"], list)
-    assert set(cached_value["data"][0]) == {"name", "address", "location", "category"}
+    assert set(cached_value["data"][0]) == {"name", "address", "location", "category", "tags"}
     assert "status" not in cached_value
     assert "info" not in cached_value
     assert "photos" not in cached_value["data"][0]
@@ -416,7 +416,7 @@ async def test_nearby_poi_uses_fixed_endpoint_params_projection_and_cache():
     assert request.url.params["location"] == "104.06,30.57"
     assert request.url.params["radius"] == "1000"
     assert request.url.params["key"] == "amap-key"
-    assert set(first[0]) == {"name", "address", "location", "category", "data_status", "source_updated_at", "retrieved_at"}
+    assert set(first[0]) == {"name", "address", "location", "category", "tags", "data_status", "source_updated_at", "retrieved_at"}
     assert second[0]["data_status"] == "cached"
     assert "private" not in repr(first)
 

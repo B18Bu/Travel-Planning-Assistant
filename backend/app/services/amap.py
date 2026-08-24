@@ -143,7 +143,13 @@ class AmapClient:
         for item in pois[:10]:
             if not isinstance(item, dict):
                 raise ExternalServiceUnavailable("高德地图未返回有效 POI")
-            candidate = {"name": item.get("name"), "address": item.get("address"), "location": item.get("location"), "category": item.get("type")}
+            candidate = {
+                "name": item.get("name"),
+                "address": item.get("address"),
+                "location": item.get("location"),
+                "category": item.get("type"),
+                "tags": _normalize_tags(item.get("tags")),
+            }
             if not _non_empty_text(candidate["name"]) or not _non_empty_text(candidate["category"]) or not _optional_text(candidate["address"]) or not _optional_text(candidate["location"]):
                 raise ExternalServiceUnavailable("高德地图未返回有效 POI")
             mapped.append(candidate)
@@ -161,6 +167,23 @@ class AmapClient:
     @staticmethod
     def _metadata(result: dict[str, Any]) -> dict[str, Any]:
         return {"data_status": result["data_status"], "source_updated_at": result.get("source_updated_at"), "retrieved_at": result["retrieved_at"]}
+
+
+def _normalize_tags(value: object) -> tuple[str, ...]:
+    """将高德 tags 规整为非空字符串元组，去重并限长。"""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    collected: list[str] = []
+    for tag in value:
+        if not isinstance(tag, str):
+            continue
+        text = tag.strip()
+        if not text or len(text) > 100 or text in collected:
+            continue
+        collected.append(text)
+        if len(collected) >= 10:
+            break
+    return tuple(collected)
 
 
 def _non_empty_text(value: object) -> bool:

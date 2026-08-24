@@ -146,6 +146,8 @@ class SummaryAgent:
                     if daily.candidates:
                         for candidate in daily.candidates:
                             lines.append(f"- {cls._safe(candidate.poi.name)}：{cls._safe(candidate.poi.address or '地址待核验')}。")
+                            if candidate.specialties:
+                                lines.append(f"- 推荐菜品：{cls._safe('、'.join(candidate.specialties))}。")
                     elif daily.filter_suggestions:
                         lines.extend(f"- {cls._safe(suggestion)}" for suggestion in daily.filter_suggestions)
                     else:

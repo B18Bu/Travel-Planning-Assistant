@@ -26,7 +26,7 @@ def request(days=3):
 def poi(name="西湖酒店", category="住宿服务", **extra):
     return {
         "name": name, "address": "西湖边", "location": "120.1,30.2", "category": category,
-        "tags": ["亲子", "便利"], "data_status": "realtime",
+        "tags": [], "data_status": "realtime",
         "source_updated_at": None, "retrieved_at": datetime(2026, 8, 21, tzinfo=timezone.utc), **extra,
     }
 
@@ -170,13 +170,23 @@ async def test_food_missing_location_does_not_call_nearby_api():
 @pytest.mark.asyncio
 async def test_food_filters_non_food_and_keeps_first_valid_candidate():
     client = FakePoiClient(nearby_results={("餐饮服务", "120.1,30.2", 2000): [
-        poi(name="商场", category="购物服务"), poi(name="真实餐厅", category="餐饮服务"), poi(name="第二餐厅", category="餐饮服务")
+        poi(name="商场", category="购物服务"), poi(name="真实餐厅", category="餐饮服务", tags=["川菜", "水煮鱼"]), poi(name="第二餐厅", category="餐饮服务")
     ]})
     result = await FoodAgent(client).run(request(days=1), (itinerary(1, attraction("上午", "西湖")),), REQUEST_ID, REQUEST_ID)
     candidate = result.data.daily_food[0].candidates[0]
     assert candidate.poi.name == "真实餐厅"
+    assert candidate.specialties == ("川菜", "水煮鱼")
     assert len(result.data.daily_food[0].candidates) == 1
-    assert all(term not in result.model_dump_json() for term in ("rating", "score", "recommendation", "招牌菜"))
+    assert all(term not in result.model_dump_json() for term in ("rating", "score", "recommendation"))
+
+
+@pytest.mark.asyncio
+async def test_food_specialties_fall_back_to_cuisine_when_no_tags():
+    client = FakePoiClient(nearby_results={("餐饮服务", "120.1,30.2", 2000): [
+        poi(name="川味馆", category="餐饮服务;中餐厅;川菜馆", tags=[]),
+    ]})
+    result = await FoodAgent(client).run(request(days=1), (itinerary(1, attraction("上午", "西湖")),), REQUEST_ID, REQUEST_ID)
+    assert result.data.daily_food[0].candidates[0].specialties == ("川菜馆",)
 
 
 @pytest.mark.asyncio
