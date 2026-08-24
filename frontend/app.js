@@ -66,9 +66,11 @@
   }
 
   function showIntro() {
+    const leavingGuide = activeView === "guide";
     if (requestController) requestController.abort();
     requestGeneration += 1;
     if (activeView === "library") cancelLibraryRequests();
+    if (leavingGuide) knowledgeRequestGeneration += 1;
     activeView = "intro";
     intro.classList.remove("hidden");
     workspace.hidden = true;
