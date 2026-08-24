@@ -328,6 +328,38 @@ def test_extract_docx_truncates_same_heading_level_and_recognizes_chinese_headin
     ]
 
 
+def test_chunking_keeps_distinct_source_sections_without_section_paths_separate():
+    chunks = chunk_extracted_content(
+        uuid4(), "报告.pdf",
+        [
+            {"content": "甲", "chunk_type": "text", "source_section": "甲章"},
+            {"content": "乙", "chunk_type": "text", "source_section": "乙章"},
+        ],
+    )
+
+    assert [chunk.content for chunk in chunks] == ["章节：甲章\n\n甲", "章节：乙章\n\n乙"]
+    assert [chunk.source_section for chunk in chunks] == ["甲章", "乙章"]
+
+
+@pytest.mark.skipif(fitz is None, reason="未安装 PyMuPDF")
+def test_pdf_pages_remain_separate_during_chunking(tmp_path):
+    pdf_path = tmp_path / "two-pages.pdf"
+    document = fitz.open()
+    page_one = document.new_page()
+    page_one.insert_text((72, 72), "First page")
+    page_two = document.new_page()
+    page_two.insert_text((72, 72), "Second page")
+    document.save(pdf_path)
+    document.close()
+
+    extracted = extract_pdf_with_pymupdf(pdf_path, tmp_path / "extracted")
+    chunks = chunk_extracted_content(uuid4(), "two-pages.pdf", extracted)
+
+    assert [chunk.content for chunk in chunks] == ["First page", "Second page"]
+    assert [chunk.source_page for chunk in chunks] == [1, 2]
+    assert [(chunk.char_start, chunk.char_end) for chunk in chunks] == [(0, 10), (0, 11)]
+
+
 @pytest.mark.skipif(fitz is None, reason="未安装 PyMuPDF")
 def test_extract_pdf_with_pymupdf_returns_page_text_and_exports_images(tmp_path):
     pdf_path = tmp_path / "report.pdf"

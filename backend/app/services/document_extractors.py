@@ -203,6 +203,8 @@ def _structured_text_groups(items: list[dict]) -> list[list[dict]]:
             and groups[-1][0].get("chunk_type") == "text"
             and not orders_are_discontinuous
             and tuple(item.get("section_path", ())) == tuple(groups[-1][0].get("section_path", ()))
+            and item.get("source_page") == groups[-1][0].get("source_page")
+            and item.get("source_section") == groups[-1][0].get("source_section")
         ):
             groups[-1].append(item)
         else:
