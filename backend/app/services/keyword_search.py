@@ -319,7 +319,7 @@ def search_chunks(
 ) -> tuple[KeywordHit, ...]:
     """按城市硬过滤 + 分类/查询词计分，返回关键词检索命中。"""
     _validate_limit(limit)
-    wanted = set(document_ids)
+    wanted = {UUID(str(document_id)) for document_id in document_ids}
     hits: list[KeywordHit] = []
     for chunk in chunks:
         if wanted and UUID(str(chunk.document_id)) not in wanted:

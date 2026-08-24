@@ -245,3 +245,17 @@ def test_merge_ranked_hits_rejects_invalid_limit():
             query_region="四川",
             limit=0,
         )
+
+
+def test_search_chunks_honors_serialized_document_ids_filter():
+    """API 请求模型将 UUID 规范为字符串，关键词检索仍必须命中指定文档。"""
+    selected = make_chunk("成都美食推荐", document_name="成都美食.docx", document_id=uuid4())
+    excluded = make_chunk("成都美食推荐", document_name="成都美食.docx", document_id=uuid4())
+
+    hits = search_chunks(
+        [selected, excluded],
+        parse_query("成都美食推荐"),
+        document_ids=(str(selected.document_id),),
+    )
+
+    assert [hit.chunk_id for hit in hits] == [UUID(str(selected.id))]
