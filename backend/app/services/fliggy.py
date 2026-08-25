@@ -6,6 +6,7 @@ from app.models.fliggy import (
     TicketSearchRequest,
     TicketSearchResponse,
 )
+from app.services.fliggy_flyai_client import FlyAIClient
 
 
 class FliggyNotConfiguredError(RuntimeError):
@@ -82,4 +83,40 @@ class MockFliggyTicketService:
             visitor_count=request.visitor_count,
             tickets=tickets,
             warnings=("当前为演示数据，不代表飞猪实时价格、库存或可售状态。",),
+        )
+
+
+class FlyAIFliggyTicketService:
+    """FlyAI 只读文本检索门票服务；不填充结构化价格、库存或 SKU。"""
+
+    def __init__(self, client: FlyAIClient) -> None:
+        self._client = client
+
+    def status(self) -> FliggyServiceStatus:
+        return FliggyServiceStatus(available=True, message="FlyAI 门票文本检索服务")
+
+    async def search_tickets(self, request: TicketSearchRequest) -> TicketSearchResponse:
+        summary = await self._client.search(request.scenic_keyword, request.entry_date)
+        retrieved_at = datetime.now(timezone.utc).isoformat()
+        if not summary or not summary.strip():
+            return TicketSearchResponse(
+                source_name="飞猪 AI 开放平台",
+                retrieved_at=retrieved_at,
+                data_status="flyai_text",
+                scenic_keyword=request.scenic_keyword,
+                visitor_count=request.visitor_count,
+                warnings=("未找到相关门票信息，请调整关键词后重试。",),
+            )
+        return TicketSearchResponse(
+            source_name="飞猪 AI 开放平台",
+            retrieved_at=retrieved_at,
+            data_status="flyai_text",
+            scenic_keyword=request.scenic_keyword,
+            visitor_count=request.visitor_count,
+            summary=summary.strip(),
+            warnings=(
+                "FlyAI 文本检索结果，不代表实时可售状态。",
+                "价格信息暂不可用。",
+                "库存信息暂不可用。请以飞猪官方页面为准。",
+            ),
         )
