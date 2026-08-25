@@ -12,6 +12,7 @@
 - [模块职责与数据流](#模块职责与数据流)
 - [企业 API 来源](#企业-api-来源)
 - [数据合同与安全边界](#数据合同与安全边界)
+- [酒店查询与推荐](#酒店查询与推荐)
 - [配置](#配置)
 - [本地启动](#本地启动)
 - [API 使用](#api-使用)
@@ -45,10 +46,11 @@
 - 和风天气与高德地图的受控 HTTP 客户端，以及进程内缓存、瞬时错误重试和熔断。
 - `/api/health`、`/api/ready`、`/api/travel-plans` 和默认关闭的 `/api/fliggy/tickets/search`。
 - 工作台保留“门票查询”入口；默认只展示筹备状态，不请求飞猪、不显示模拟价格或库存。配置 `FLIGGY_MOCK_ENABLED=true` 时可开启明确标注的本地演示数据；该模式不访问飞猪。
+- 酒店只读查询与推荐：默认关闭的飞猪 TOP 酒店低价查询，以及 FlyAI 酒店 + 高德住宿 POI 的并列推荐；两者都只读展示，不创建订单、不处理支付。
 
 ### 非目标与明确不接入
 
-本轮不接入知识库、OTA（在线旅行代理平台）、酒店或餐厅交易、预订、支付、库存、实时价格、优惠、排队、评分和订单链接。门票查询当前仅为默认关闭的筹备入口；后续仅在飞猪书面授权、字段展示许可和安全验收完成后开放只读商品、指定日期价格/库存与入园规则查询，仍不创建订单、不处理支付、不收集游客身份信息。模型使用 `extra="forbid"` 拒绝未声明字段，禁止把上述信息通过自由字段带入结果。密钥不提交，真实密钥也不进入文档示例。
+本轮不接入知识库、OTA（在线旅行代理平台）、酒店或餐厅交易、预订、支付、库存、优惠、排队和订单链接。门票查询当前仅为默认关闭的筹备入口；后续仅在飞猪书面授权、字段展示许可和安全验收完成后开放只读商品、指定日期价格/库存与入园规则查询，仍不创建订单、不处理支付、不收集游客身份信息。酒店查询同样保持只读边界：飞猪 TOP 低价接口与 FlyAI 酒店搜索只返回展示字段和官方详情跳转，不在本系统内下单或支付，也不承诺实时库存或可预订状态。模型使用 `extra="forbid"` 拒绝未声明字段，禁止把上述信息通过自由字段带入结果。密钥不提交，真实密钥也不进入文档示例。
 
 ## 用户流程与总体架构
 
@@ -146,6 +148,40 @@ Agent 状态只有以下 4 种：
 
 服务端密钥只从后端环境变量读取，浏览器只访问相对路径；CORS 仅允许配置的同源来源。API 返回通用错误，避免把异常详情、请求参数和供应商响应体泄露给客户端。
 
+## 酒店查询与推荐
+
+酒店功能是独立于行程规划的只读能力，默认关闭。它提供两种互不混用的数据源模式：传统飞猪 TOP 接口（面向具备商家/商旅资质的部署）与飞猪 FlyAI 开放平台（面向个人开发者）。两种模式返回的酒店结果都只用于展示，不包含预订、支付、库存或下单能力。
+
+### 模式一：飞猪 TOP 酒店低价查询（企业模式）
+
+- 固定网关：`https://eco.taobao.com/router/rest`，固定 method：`alitrip.btrip.hotel.distribution.search.low.price`（API 56180）。
+- 请求以 TOP MD5 签名，需 `FLIGGY_HOTEL_APP_KEY`、`FLIGGY_HOTEL_APP_SECRET` 和服务端配置的 `FLIGGY_HOTEL_SUB_CHANNEL`；`sub_channel` 由后端注入，不接受前端传入。
+- 按城市、入住/离店日期返回酒店名称、酒店 ID 和最低价（内部按“分”整数处理，输出按人民币元），价格相同时保持飞猪返回顺序。
+- 需要飞猪商旅酒店分销资质和渠道授权，不适合个人开发者；未配置时默认关闭，不发起外部请求。
+
+### 模式二：FlyAI 酒店 + 高德 POI 并列推荐（个人模式）
+
+- 通过官方 `flyai` CLI 调用 MCP 工具 `search_hotels`，端点 `https://flyai.open.fliggy.com/mcp`；API Key 通过 `FLYAI_API_KEY` 配置，仅注入子进程环境变量，不出现在命令行参数、日志或响应中。
+- 与高德住宿 POI 并行查询，只对规范化后名称完全相等的酒店合并展示价格/评分/星级/图片/详情与地址/位置；未匹配的 FlyAI 结果与高德 POI 分别展示，不补造价格或地址。
+- FlyAI 未返回价格时显示“价格暂不可用”，不显示 0；`detailUrl` 仅作为官方详情外链，只允许 HTTPS，前端新窗口打开并带 `rel="noopener noreferrer"`。
+- 图片只渲染 HTTPS 地址，加载失败时隐藏；供应商字段在前端使用 `textContent`/`createElement` 渲染，不使用 `innerHTML`。
+- 需要在 FlyAI 控制台获取正式 API Key，并确保本机可执行 `flyai` 命令（`npx skills add alibaba-flyai/flyai-skill` 或 `npm i -g @fly-ai/flyai-cli`）。
+
+### 接口与启用
+
+- `POST /api/fliggy/hotels/search`：飞猪 TOP 酒店低价查询，企业模式。
+- `POST /api/fliggy/hotels/recommend`：FlyAI 酒店与高德 POI 并列推荐，个人模式。
+- 默认关闭：开关关闭或凭据缺失时返回 HTTP `503`，不发外部请求；FlyAI 上游受控错误返回 HTTP `502`，仅暴露受控错误码与 `trace_id`，不泄露 API Key 或上游原文。
+
+启用步骤：
+
+```powershell
+# 编辑 backend\.env（不要提交，也不要粘贴到聊天或文档）
+FLYAI_HOTEL_ENABLED=true
+FLYAI_API_KEY=你的新Key
+# 确保 flyai CLI 可执行；重启后端后进入前端“酒店推荐”视图即可测试
+```
+
 ## 配置
 
 复制 `backend/.env.example` 为 `backend/.env`，只填写本机或部署环境的密钥。`.env` 不得提交，真实密钥不得写入 Git、前端文件、日志、测试样例或 README。
@@ -178,8 +214,18 @@ Agent 状态只有以下 4 种：
 | `CHROMA_COLLECTION_NAME` | Chroma 文档集合名称 | — | `travel_documents` |
 | `DOCUMENT_MAX_UPLOAD_BYTES` | 单份文档最大上传大小 | 字节 | `20971520` |
 | `DOCUMENT_BATCH_MAX_FILES` | 单次批量上传最大文件数 | 份 | `10`（范围 1—20） |
+| `FLIGGY_HOTEL_ENABLED` | 飞猪 TOP 酒店低价查询开关（企业模式） | 布尔 | `false` |
+| `FLIGGY_HOTEL_APP_KEY` | 飞猪 TOP 应用 AppKey | — | 空 |
+| `FLIGGY_HOTEL_APP_SECRET` | 飞猪 TOP 应用 AppSecret（仅签名，不落日志/响应） | — | 空 |
+| `FLIGGY_HOTEL_SUB_CHANNEL` | 飞猪商旅酒店分销渠道值 | — | 空 |
+| `FLIGGY_HOTEL_API_URL` | 飞猪 TOP 固定 HTTPS 网关（仅允许官方地址） | URL | `https://eco.taobao.com/router/rest` |
+| `FLYAI_HOTEL_ENABLED` | FlyAI 酒店推荐开关（个人模式） | 布尔 | `false` |
+| `FLYAI_API_KEY` | FlyAI 开放平台 API Key（门票与酒店共用） | — | 空 |
+| `FLYAI_CLI_COMMAND` | FlyAI CLI 可执行命令 | 命令 | `flyai` |
+| `FLYAI_CLI_TIMEOUT_SECONDS` | FlyAI CLI 单次调用总超时 | 秒 | `20.0` |
+| `FLYAI_HOTEL_LIMIT` | FlyAI 酒店推荐单次最多返回结果数 | 条 | `10`（范围 1—20） |
 
-所有变量仅由后端控制，客户端不能覆盖。密钥默认空值；缺少任一外部密钥时，`/api/ready` 返回 HTTP `503`，但 `/api/health` 仍可用于进程存活检查。
+所有变量仅由后端控制，客户端不能覆盖。密钥默认空值；缺少任一外部密钥时，`/api/ready` 返回 HTTP `503`，但 `/api/health` 仍可用于进程存活检查。酒店相关开关默认关闭，即使密钥存在也不会在未开启时发起外部请求。
 
 ## 本地启动
 
@@ -286,6 +332,51 @@ HTTP `200` 返回结构化文档。下面是 API 合同的精简 JSON 形状；�
 
 文档处理依赖本地 BGE 模型、Chroma、`python-docx`、MinerU、Qwen-VL 和 PyMuPDF。当前 PDF 始终在本地由 PyMuPDF 提取；MinerU 配置保留给后续受控外发解析接入，当前处理链路不会调用它。PyMuPDF 只能从 PDF 中提取可访问的文本与基础结构，不能保证扫描件 OCR、复杂版面、图表或表格的完整还原；此类内容需人工核验，后续接入受控 MinerU/Qwen-VL 后再按实际能力处理。
 
+### 酒店查询与推荐接口
+
+两个接口默认关闭，未配置或开关关闭时返回 HTTP `503`。
+
+#### `POST /api/fliggy/hotels/search`（飞猪 TOP，企业模式）
+
+请求按城市与入住/离店日期查询飞猪酒店最低价，价格按最低价升序稳定排序。请求体：
+
+```json
+{
+  "city_name": "杭州",
+  "check_in": "2026-09-01",
+  "check_out": "2026-09-02",
+  "page_no": 1,
+  "page_size": 20
+}
+```
+
+响应包含 `hotels` 列表（`hotel_id`、`name`、`low_price`、`currency`、`supplier`）、`total`、分页和 `trace_id`；`low_price` 以人民币元输出数字。
+
+#### `POST /api/fliggy/hotels/recommend`（FlyAI + 高德 POI，个人模式）
+
+请求体：
+
+```json
+{
+  "city_name": "杭州",
+  "check_in": "2026-09-01",
+  "check_out": "2026-09-02",
+  "poi_name": "西湖",
+  "sort": "price_asc",
+  "max_price": 500,
+  "limit": 10
+}
+```
+
+响应包含 `hotels` 列表，每项表示一个酒店：
+
+- `hotel_name`、`flyai_price`（无价格时为 `null`）、`flyai_score`、`flyai_star`、`flyai_main_pic`、`detail_url`；
+- `amap_address`、`amap_location`（高德匹配结果，未匹配时为 `null`）；
+- `price_source`、`poi_source`、`match_status`（`matched` / `flyai_only` / `poi_only`）；
+- 顶层含 `flyai_retrieved_at`、`amap_retrieved_at`、`poi_unavailable` 和 `trace_id`。
+
+错误：参数不合法返回 `422`；开关关闭或凭据缺失返回 `503`；FlyAI 上游受控错误返回 `502`，仅返回受控错误码与 `trace_id`，不泄露 API Key 或供应商原文。
+
 ### 健康检查
 
 - `GET /api/health`：进程存活检查，正常返回 `{"status":"ok"}`，不要求外部密钥。
@@ -298,6 +389,7 @@ HTTP `200` 返回结构化文档。下面是 API 合同的精简 JSON 形状；�
 - 本地文件 SHA-256：`marked.min.js` 为 `3e7e7d7feb3e5d58cb6c804f68ab5c24cc7e5eb6270fd6e5cbb9124739217d0c`；`purify.min.js` 为 `89e1fa7647cb495370d3a997ace4387f5d15d9f4c5af12352c53daa400956287`。完整许可证和 npm shasum 见 `frontend/vendor/THIRD_PARTY_NOTICES.md`。
 - XSS 策略：Markdown 先由 `marked.parse` 转换，再由 `DOMPurify.sanitize` 净化。前端配置 `FORBID_TAGS` 禁止 `script`、`style`、`svg`、`math` 标签，配置 `FORBID_ATTR` 禁止名称匹配 `on*` 的事件属性。列表和错误文字使用 `textContent` / `replaceChildren`，不把 API 响应 JSON 序列化为页面原文。
 - 前端只调用相对路径 `/api/travel-plans`，不携带服务端密钥，也不从 CDN 加载运行时依赖。
+- 酒店推荐视图按来源并列展示：FlyAI 负责价格/评分/星级/图片/官方详情，高德负责地址/位置；未匹配字段显示“位置暂无匹配”或“价格暂不可用”，不显示 0、不补造数据、不展示“可预订/库存/下单”等承诺。图片与详情链接仅允许 HTTPS，图片加载失败自动隐藏，供应商字段一律使用 `textContent`/`createElement` 渲染。
 
 ## 缓存、重试与熔断
 
