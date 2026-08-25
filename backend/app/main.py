@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.documents import router as documents_router
+from app.api.fliggy import router as fliggy_router
 from app.api.travel import router as travel_router
 from app.config import Settings, get_settings
 from app.dependencies import build_orchestrator
@@ -16,6 +17,7 @@ from app.services.chroma_store import ChromaStore
 from app.services.deepseek import DeepSeekClient
 from app.services.document_processor import DocumentProcessor
 from app.services.document_store import DocumentStore
+from app.services.fliggy import DisabledFliggyTicketService
 from app.services.embeddings import LocalBgeEmbedder
 from app.services.knowledge_polish import KnowledgePolisher
 from app.services.mineru import MinerUClient
@@ -70,6 +72,7 @@ def create_app(
             app.state.chroma_store,
         )
     app.state.query_record_store = QueryRecordStore(app.state.document_store.data_dir)
+    app.state.fliggy_ticket_service = DisabledFliggyTicketService()
     app.state.knowledge_polisher = KnowledgePolisher(
         DeepSeekClient(
             settings.deepseek_api_key,
@@ -100,6 +103,7 @@ def create_app(
 
     app.include_router(travel_router)
     app.include_router(documents_router)
+    app.include_router(fliggy_router)
     image_dir = _image_dir()
     if image_dir.is_dir():
         mimetypes.add_type("image/webp", ".webp")
