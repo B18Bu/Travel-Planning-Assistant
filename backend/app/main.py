@@ -17,7 +17,12 @@ from app.services.chroma_store import ChromaStore
 from app.services.deepseek import DeepSeekClient
 from app.services.document_processor import DocumentProcessor
 from app.services.document_store import DocumentStore
-from app.services.fliggy import DisabledFliggyTicketService, MockFliggyTicketService
+from app.services.fliggy import (
+    DisabledFliggyTicketService,
+    FlyAIFliggyTicketService,
+    MockFliggyTicketService,
+)
+from app.services.fliggy_flyai_client import FlyAIClient
 from app.services.embeddings import LocalBgeEmbedder
 from app.services.knowledge_polish import KnowledgePolisher
 from app.services.mineru import MinerUClient
@@ -35,6 +40,22 @@ def _image_dir() -> Path:
     """返回旅行轮播图片目录。"""
 
     return Path(__file__).resolve().parents[2] / "image"
+
+
+def _build_ticket_service(settings: Settings):
+    """按 FLIGGY_TICKET_PROVIDER 构造门票服务；flyai 缺 Key 时保持关闭。"""
+
+    provider = settings.fliggy_ticket_provider
+    if provider == "mock":
+        return MockFliggyTicketService()
+    if provider == "flyai" and settings.flyai_api_key.strip():
+        return FlyAIFliggyTicketService(
+            FlyAIClient(
+                api_key=settings.flyai_api_key,
+                timeout_seconds=settings.flyai_timeout_seconds,
+            )
+        )
+    return DisabledFliggyTicketService()
 
 
 def create_app(
@@ -73,9 +94,7 @@ def create_app(
             app.state.chroma_store,
         )
     app.state.query_record_store = QueryRecordStore(app.state.document_store.data_dir)
-    app.state.fliggy_ticket_service = fliggy_ticket_service or (
-        MockFliggyTicketService() if settings.fliggy_mock_enabled else DisabledFliggyTicketService()
-    )
+    app.state.fliggy_ticket_service = fliggy_ticket_service or _build_ticket_service(settings)
     app.state.knowledge_polisher = KnowledgePolisher(
         DeepSeekClient(
             settings.deepseek_api_key,
