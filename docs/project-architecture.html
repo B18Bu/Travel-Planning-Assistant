@@ -242,6 +242,171 @@
       }
     }
 
+    /* ===== 图表：架构图 / 流程图 ===== */
+    .figure {
+      margin: 1.25rem 0 0;
+    }
+    .figure figcaption {
+      margin: 0.5rem 0.25rem 0;
+      color: var(--color-text-muted);
+      font-size: 0.85rem;
+    }
+    .diagram-scroll {
+      overflow-x: auto;
+      border: 1px solid var(--color-border);
+      border-radius: 0.75rem;
+      background: var(--color-surface);
+      padding: 0.75rem 0.5rem;
+    }
+    .diagram-scroll svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      min-width: 640px;
+      color: var(--diagram-node-text);
+    }
+
+    /* 图例 */
+    .legend {
+      list-style: none;
+      margin: 0.75rem 0 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.5rem 1rem;
+    }
+    .legend li {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+    }
+    .legend .swatch {
+      flex: 0 0 auto;
+      width: 1rem;
+      height: 1rem;
+      border-radius: 0.25rem;
+      border: 1px solid var(--color-border);
+    }
+    .legend .swatch-chain {
+      background: var(--diagram-chain-fill);
+      border-color: var(--diagram-chain-stroke);
+    }
+    .legend .swatch-depend {
+      background: var(--diagram-depend-fill);
+      border-color: var(--diagram-depend-stroke);
+    }
+    .legend .swatch-container {
+      background: var(--diagram-container-fill);
+      border-color: var(--diagram-container-stroke);
+    }
+
+    .note ul {
+      margin: 0.5rem 0 0;
+      padding-left: 1.25rem;
+    }
+    .note li + li {
+      margin-top: 0.25rem;
+    }
+
+    /* ===== SVG 图表主题变量（浅色默认，深色覆盖） ===== */
+    :root {
+      --diagram-chain-fill: #e8f1fd;
+      --diagram-chain-stroke: #0969da;
+      --diagram-depend-fill: #fff4d6;
+      --diagram-depend-stroke: #9a6700;
+      --diagram-branch-fill: #fdeceb;
+      --diagram-branch-stroke: #cf222e;
+      --diagram-container-fill: #f6f8fa;
+      --diagram-container-stroke: #57606a;
+      --diagram-node-text: #1f2328;
+      --diagram-node-sub: #59636e;
+      --diagram-arrow: #57606a;
+      --diagram-dashed: #8b949e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --diagram-chain-fill: #10263f;
+        --diagram-chain-stroke: #4493f8;
+        --diagram-depend-fill: #3a2d12;
+        --diagram-depend-stroke: #d29922;
+        --diagram-branch-fill: #3d1d1f;
+        --diagram-branch-stroke: #f47067;
+        --diagram-container-fill: #161b22;
+        --diagram-container-stroke: #9198a1;
+        --diagram-node-text: #e6edf3;
+        --diagram-node-sub: #9198a1;
+        --diagram-arrow: #8b949e;
+        --diagram-dashed: #6e7681;
+      }
+    }
+    :root[data-theme="dark"] {
+      --diagram-chain-fill: #10263f;
+      --diagram-chain-stroke: #4493f8;
+      --diagram-depend-fill: #3a2d12;
+      --diagram-depend-stroke: #d29922;
+      --diagram-branch-fill: #3d1d1f;
+      --diagram-branch-stroke: #f47067;
+      --diagram-container-fill: #161b22;
+      --diagram-container-stroke: #9198a1;
+      --diagram-node-text: #e6edf3;
+      --diagram-node-sub: #9198a1;
+      --diagram-arrow: #8b949e;
+      --diagram-dashed: #6e7681;
+    }
+
+    /* ===== SVG 节点样式 ===== */
+    .d-chain {
+      fill: var(--diagram-chain-fill);
+      stroke: var(--diagram-chain-stroke);
+      stroke-width: 1.5;
+    }
+    .d-depend {
+      fill: var(--diagram-depend-fill);
+      stroke: var(--diagram-depend-stroke);
+      stroke-width: 1.25;
+      stroke-dasharray: 5 4;
+    }
+    .d-container {
+      fill: var(--diagram-container-fill);
+      stroke: var(--diagram-container-stroke);
+      stroke-width: 1.4;
+      stroke-dasharray: 7 5;
+    }
+    .d-branch {
+      fill: var(--diagram-branch-fill);
+      stroke: var(--diagram-branch-stroke);
+      stroke-width: 1.25;
+      stroke-dasharray: 5 4;
+    }
+    .d-arrow {
+      stroke: var(--diagram-arrow);
+      stroke-width: 1.6;
+    }
+    .d-dashed {
+      stroke: var(--diagram-dashed);
+      stroke-width: 1.4;
+      stroke-dasharray: 5 4;
+      fill: none;
+    }
+    .d-hline {
+      stroke: var(--diagram-dashed);
+      stroke-width: 1;
+    }
+    .d-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      fill: var(--diagram-node-text);
+    }
+    .d-sub {
+      font-size: 10.5px;
+      fill: var(--diagram-node-sub);
+    }
+    .d-note {
+      font-size: 10px;
+      fill: var(--diagram-node-sub);
+    }
+
     /* ===== 减少动效 ===== */
     @media (prefers-reduced-motion: reduce) {
       html {
@@ -333,12 +498,280 @@
 
       <section id="architecture" aria-labelledby="architecture-heading">
         <h2 id="architecture-heading">总体架构</h2>
-        <p>本节将展示系统总体架构图与文字图例，具体内容由后续任务补充。</p>
+        <p>
+          系统采用「浏览器 → FastAPI API 层 → <code>SequentialTravelOrchestrator</code> → 五类专业 Agent →
+          <code>TravelPlanDocument</code> → 前端展示」的单链路主流程；和风天气、高德地图作为外部依赖节点，
+          Pydantic 数据合同与缓存 / 重试 / 熔断作为横切机制。颜色仅作辅助，每个节点均带有可读文本。
+        </p>
+
+        <figure class="figure">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 1240 740" role="img" aria-labelledby="arch-svg-title arch-svg-desc"
+>
+              <title id="arch-svg-title">系统总体架构图</title>
+              <desc id="arch-svg-desc">浏览器经 FastAPI API 层进入 SequentialTravelOrchestrator，依次运行天气、路线、住宿、餐饮、汇总五类 Agent，输出 TravelPlanDocument 并在前端净化渲染；和风天气与高德地图为外部依赖，Pydantic 数据合同与缓存重试熔断为横切机制。</desc>
+              <defs>
+                <marker id="arch-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-arrow)" />
+                </marker>
+              </defs>
+
+              <!-- 主链路：浏览器 -->
+              <rect class="d-chain" x="100" y="30" width="460" height="64" rx="10" />
+              <text class="d-title" x="330" y="58" text-anchor="middle">浏览器（同源前端）</text>
+              <text class="d-sub" x="330" y="80" text-anchor="middle">桌面双栏 · 窄屏单栏 · 仅调用相对路径 /api/travel-plans</text>
+
+              <!-- 主链路：FastAPI API 层 -->
+              <line class="d-arrow" x1="330" y1="94" x2="330" y2="130" marker-end="url(#arch-arrow)" />
+              <rect class="d-chain" x="100" y="130" width="460" height="100" rx="10" />
+              <text class="d-title" x="330" y="158" text-anchor="middle">FastAPI API 层</text>
+              <text class="d-sub" x="330" y="178" text-anchor="middle">POST /api/travel-plans · GET /api/health · GET /api/ready</text>
+              <text class="d-sub" x="330" y="196" text-anchor="middle">生成 / 规范化 request_id 与 trace_id · Pydantic 校验</text>
+              <text class="d-sub" x="330" y="214" text-anchor="middle">错误隐藏 · 安全响应头 · 不写入供应商密钥</text>
+
+              <!-- 主链路：编排器容器 -->
+              <line class="d-arrow" x1="330" y1="230" x2="330" y2="266" marker-end="url(#arch-arrow)" />
+              <rect class="d-container" x="70" y="266" width="520" height="250" rx="14" />
+              <text class="d-title" x="90" y="292" text-anchor="start">SequentialTravelOrchestrator（固定顺序：天气 → 路线 → 住宿 → 餐饮 → 汇总）</text>
+
+              <!-- 五类专业 Agent -->
+              <rect class="d-chain" x="90" y="340" width="80" height="90" rx="8" />
+              <text class="d-title" x="130" y="364" text-anchor="middle">天气 Agent</text>
+              <text class="d-sub" x="130" y="384" text-anchor="middle">风险等级</text>
+              <text class="d-sub" x="130" y="400" text-anchor="middle">活动约束</text>
+              <text class="d-sub" x="130" y="416" text-anchor="middle">天气结果</text>
+
+              <line class="d-arrow" x1="170" y1="385" x2="190" y2="385" marker-end="url(#arch-arrow)" />
+              <rect class="d-chain" x="190" y="340" width="80" height="90" rx="8" />
+              <text class="d-title" x="230" y="364" text-anchor="middle">路线 Agent</text>
+              <text class="d-sub" x="230" y="384" text-anchor="middle">按风险选景区</text>
+              <text class="d-sub" x="230" y="400" text-anchor="middle">时段行程</text>
+              <text class="d-sub" x="230" y="416" text-anchor="middle">驾车预估</text>
+
+              <line class="d-arrow" x1="270" y1="385" x2="290" y2="385" marker-end="url(#arch-arrow)" />
+              <rect class="d-chain" x="290" y="340" width="80" height="90" rx="8" />
+              <text class="d-title" x="330" y="364" text-anchor="middle">住宿 Agent</text>
+              <text class="d-sub" x="330" y="384" text-anchor="middle">推荐区域</text>
+              <text class="d-sub" x="330" y="400" text-anchor="middle">住宿 POI</text>
+              <text class="d-sub" x="330" y="416" text-anchor="middle">筛选建议</text>
+
+              <line class="d-arrow" x1="370" y1="385" x2="390" y2="385" marker-end="url(#arch-arrow)" />
+              <rect class="d-chain" x="390" y="340" width="80" height="90" rx="8" />
+              <text class="d-title" x="430" y="364" text-anchor="middle">餐饮 Agent</text>
+              <text class="d-sub" x="430" y="384" text-anchor="middle">餐饮 POI</text>
+              <text class="d-sub" x="430" y="400" text-anchor="middle">推荐菜品</text>
+
+              <line class="d-arrow" x1="470" y1="385" x2="490" y2="385" marker-end="url(#arch-arrow)" />
+              <rect class="d-chain" x="490" y="340" width="80" height="90" rx="8" />
+              <text class="d-title" x="530" y="364" text-anchor="middle">汇总 Agent</text>
+              <text class="d-sub" x="530" y="384" text-anchor="middle">聚合 · 去重</text>
+              <text class="d-sub" x="530" y="400" text-anchor="middle">确定顶层状态</text>
+              <text class="d-sub" x="530" y="416" text-anchor="middle">生成 Markdown</text>
+
+              <text class="d-note" x="90" y="478" text-anchor="start">单个 Agent 异常 → 受控 failed，其余信息继续汇总，由汇总 Agent 生成文档。</text>
+
+              <!-- 主链路：TravelPlanDocument -->
+              <line class="d-arrow" x1="330" y1="516" x2="330" y2="552" marker-end="url(#arch-arrow)" />
+              <rect class="d-chain" x="100" y="552" width="460" height="76" rx="10" />
+              <text class="d-title" x="330" y="580" text-anchor="middle">TravelPlanDocument（Pydantic 输出合同）</text>
+              <text class="d-sub" x="330" y="602" text-anchor="middle">itinerary（唯一机器事实） · markdown（表现层） · sources · warnings · status</text>
+
+              <!-- 主链路：前端展示 -->
+              <line class="d-arrow" x1="330" y1="628" x2="330" y2="658" marker-end="url(#arch-arrow)" />
+              <rect class="d-chain" x="100" y="658" width="460" height="56" rx="10" />
+              <text class="d-title" x="330" y="684" text-anchor="middle">前端展示</text>
+              <text class="d-sub" x="330" y="702" text-anchor="middle">marked.parse → DOMPurify.sanitize → 渲染</text>
+
+              <!-- 依赖：外部数据服务 -->
+              <rect class="d-container" x="660" y="296" width="240" height="150" rx="12" />
+              <text class="d-note" x="678" y="318" text-anchor="start">外部数据服务</text>
+              <rect class="d-depend" x="680" y="326" width="200" height="46" rx="8" />
+              <text class="d-sub" x="780" y="346" text-anchor="middle">和风天气 API</text>
+              <text class="d-note" x="780" y="363" text-anchor="middle">逐日预报 · 固定域名 · 服务端密钥</text>
+              <rect class="d-depend" x="680" y="382" width="200" height="46" rx="8" />
+              <text class="d-sub" x="780" y="402" text-anchor="middle">高德地图 API</text>
+              <text class="d-note" x="780" y="419" text-anchor="middle">地理编码 / 驾车路线 / POI · 固定域名</text>
+
+              <line class="d-dashed" x1="590" y1="404" x2="660" y2="404" marker-end="url(#arch-arrow)" />
+              <text class="d-note" x="625" y="396" text-anchor="middle">注入客户端</text>
+
+              <!-- 横切：缓存 / 重试 / 熔断 -->
+              <rect class="d-container" x="660" y="492" width="240" height="82" rx="12" />
+              <rect class="d-depend" x="680" y="502" width="200" height="62" rx="8" />
+              <text class="d-sub" x="780" y="522" text-anchor="middle">缓存 / 重试 / 熔断（横切）</text>
+              <text class="d-note" x="780" y="540" text-anchor="middle">进程内 TTL 缓存</text>
+              <text class="d-note" x="780" y="556" text-anchor="middle">最多 3 次指数退避重试 · 熔断 60 秒</text>
+              <line class="d-dashed" x1="780" y1="446" x2="780" y2="492" marker-end="url(#arch-arrow)" />
+              <text class="d-note" x="792" y="472" text-anchor="start">包裹外部 HTTP 客户端</text>
+
+              <!-- 横切：Pydantic 数据合同 -->
+              <line class="d-dashed" x1="560" y1="180" x2="930" y2="180" marker-end="url(#arch-arrow)" />
+              <text class="d-note" x="745" y="172" text-anchor="middle">请求 / 响应模型</text>
+              <line class="d-dashed" x1="560" y1="590" x2="930" y2="590" marker-end="url(#arch-arrow)" />
+              <text class="d-note" x="745" y="586" text-anchor="middle">文档结构强校验</text>
+              <rect class="d-depend" x="930" y="130" width="210" height="498" rx="12" />
+              <text class="d-title" x="1035" y="162" text-anchor="middle">Pydantic 数据合同</text>
+              <text class="d-sub" x="1035" y="186" text-anchor="middle">请求与响应全程强类型校验</text>
+              <text class="d-sub" x="1035" y="206" text-anchor="middle">extra="forbid" 拒绝未声明字段</text>
+              <text class="d-sub" x="1035" y="226" text-anchor="middle">构造后不可修改（frozen）</text>
+              <line class="d-hline" x1="950" y1="242" x2="1120" y2="242" />
+              <text class="d-sub" x="1035" y="272" text-anchor="middle">TravelPlanRequest（入参）</text>
+              <text class="d-sub" x="1035" y="306" text-anchor="middle">AgentResult（结果信封）</text>
+              <text class="d-sub" x="1035" y="340" text-anchor="middle">TravelPlanDocument（出参）</text>
+              <line class="d-hline" x1="950" y1="366" x2="1120" y2="366" />
+              <text class="d-note" x="1035" y="396" text-anchor="middle">itinerary 为唯一机器事实载体</text>
+              <text class="d-note" x="1035" y="420" text-anchor="middle">markdown 仅表现层，不可反解析</text>
+              <text class="d-note" x="1035" y="444" text-anchor="middle">状态由专业 Agent 结果汇总决定</text>
+            </svg>
+          </div>
+          <figcaption>图 1 · 系统总体架构：主链路 + 依赖与横切节点</figcaption>
+          <ul class="legend">
+            <li><span class="swatch swatch-chain" aria-hidden="true"></span>主链路节点（浏览器 / API / 编排器 / 数据合同 / 前端）</li>
+            <li><span class="swatch swatch-depend" aria-hidden="true"></span>依赖与横切节点（外部服务 / Pydantic 合同 / 韧性）</li>
+            <li><span class="swatch swatch-container" aria-hidden="true"></span>容器（编排器内部顺序 / 依赖分组）</li>
+          </ul>
+        </figure>
+
+        <p>
+          <strong>文字图例：</strong>请求从同源浏览器发出，经 <code>FastAPI API 层</code> 完成 Pydantic 校验、
+          生成 / 规范化 <code>request_id</code> 与 <code>trace_id</code>，隐藏错误并附加安全响应头；随后
+          <code>SequentialTravelOrchestrator</code> 按固定顺序依次运行天气、路线、住宿、餐饮四个专业 Agent，
+          最后由汇总 Agent 聚合四结果、去重来源、拼接警告并确定顶层状态，输出 <code>TravelPlanDocument</code>。
+          和风天气与高德地图由服务端客户端调用（密钥仅存服务端），Pydantic 数据合同贯穿请求与响应，
+          缓存 / 重试 / 熔断包裹外部 HTTP 客户端以提升韧性。
+        </p>
       </section>
 
       <section id="travel-flow" aria-labelledby="travel-flow-heading">
         <h2 id="travel-flow-heading">旅行规划流程</h2>
-        <p>本节将展示旅行规划请求的端到端流程，具体内容由后续任务补充。</p>
+        <p>
+          一次旅行规划请求的端到端顺序流程如下。核心机制是：四个专业 Agent 顺序执行，任一 Agent 抛异常时
+          仅该结果转为受控 <code>failed</code>，其余信息继续进入汇总，最终仍返回一份完整文档。
+        </p>
+
+        <figure class="figure">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 900 940" role="img" aria-labelledby="flow-svg-title flow-svg-desc"
+>
+              <title id="flow-svg-title">旅行规划端到端流程</title>
+              <desc id="flow-svg-desc">从提交表单、生成 / 规范化 request_id 与 trace_id、请求合同校验，到编排器依次执行天气、路线、住宿、餐饮四类专业 Agent（单 Agent 异常转为受控 failed），再经汇总 Agent 生成 TravelPlanDocument，前端净化 Markdown 后展示。</desc>
+              <defs>
+                <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-arrow)" />
+                </marker>
+              </defs>
+
+              <!-- 提交表单 -->
+              <rect class="d-chain" x="270" y="20" width="360" height="50" rx="10" />
+              <text class="d-title" x="450" y="42" text-anchor="middle">用户提交行程表单</text>
+              <text class="d-sub" x="450" y="60" text-anchor="middle">POST /api/travel-plans（同源相对路径）</text>
+
+              <line class="d-arrow" x1="450" y1="70" x2="450" y2="98" marker-end="url(#flow-arrow)" />
+
+              <!-- 生成 / 规范化标识 -->
+              <rect class="d-chain" x="270" y="98" width="360" height="66" rx="10" />
+              <text class="d-title" x="450" y="120" text-anchor="middle">生成 / 规范化 request_id 与 trace_id</text>
+              <text class="d-sub" x="450" y="142" text-anchor="middle">中间件读取 x-request-id，否则生成 UUID（v1–v5）</text>
+              <text class="d-sub" x="450" y="158" text-anchor="middle">trace_id 与 request_id 保持一致</text>
+
+              <line class="d-arrow" x1="450" y1="164" x2="450" y2="184" marker-end="url(#flow-arrow)" />
+
+              <!-- 请求合同校验 -->
+              <rect class="d-chain" x="270" y="184" width="360" height="58" rx="10" />
+              <text class="d-title" x="450" y="206" text-anchor="middle">Pydantic 请求合同校验</text>
+              <text class="d-sub" x="450" y="226" text-anchor="middle">TravelPlanRequest · extra="forbid" 拒绝未声明字段</text>
+
+              <!-- 校验失败分支 -->
+              <line class="d-dashed" x1="630" y1="213" x2="690" y2="213" marker-end="url(#flow-arrow)" />
+              <rect class="d-branch" x="690" y="184" width="190" height="58" rx="8" />
+              <text class="d-sub" x="785" y="206" text-anchor="middle">校验失败（受控错误）</text>
+              <text class="d-note" x="785" y="226" text-anchor="middle">HTTP 4xx · 不泄露内部细节</text>
+
+              <line class="d-arrow" x1="450" y1="242" x2="450" y2="290" marker-end="url(#flow-arrow)" />
+
+              <!-- 编排器容器 -->
+              <rect class="d-container" x="140" y="290" width="620" height="430" rx="14" />
+              <text class="d-title" x="160" y="316" text-anchor="start">SequentialTravelOrchestrator（专业 Agent 顺序执行）</text>
+
+              <!-- 天气 Agent -->
+              <rect class="d-chain" x="170" y="325" width="230" height="46" rx="8" />
+              <text class="d-title" x="180" y="344" text-anchor="start">天气 Agent</text>
+              <text class="d-note" x="180" y="361" text-anchor="start">风险等级 · 活动约束 · 天气结果</text>
+
+              <line class="d-arrow" x1="285" y1="371" x2="285" y2="397" marker-end="url(#flow-arrow)" />
+
+              <!-- 路线 Agent -->
+              <rect class="d-chain" x="170" y="397" width="230" height="46" rx="8" />
+              <text class="d-title" x="180" y="416" text-anchor="start">路线 Agent</text>
+              <text class="d-note" x="180" y="433" text-anchor="start">按天气风险选景区 · 时段行程 · 驾车预估</text>
+
+              <line class="d-arrow" x1="285" y1="443" x2="285" y2="469" marker-end="url(#flow-arrow)" />
+
+              <!-- 住宿 Agent -->
+              <rect class="d-chain" x="170" y="469" width="230" height="46" rx="8" />
+              <text class="d-title" x="180" y="488" text-anchor="start">住宿 Agent</text>
+              <text class="d-note" x="180" y="505" text-anchor="start">推荐区域 · 住宿 POI · 筛选建议</text>
+
+              <line class="d-arrow" x1="285" y1="515" x2="285" y2="541" marker-end="url(#flow-arrow)" />
+
+              <!-- 餐饮 Agent -->
+              <rect class="d-chain" x="170" y="541" width="230" height="46" rx="8" />
+              <text class="d-title" x="180" y="560" text-anchor="start">餐饮 Agent</text>
+              <text class="d-note" x="180" y="577" text-anchor="start">餐饮 POI · 推荐菜品</text>
+
+              <!-- 异常分支：单 Agent 受控 failed -->
+              <rect class="d-branch" x="430" y="320" width="300" height="278" rx="10" />
+              <text class="d-title" x="580" y="344" text-anchor="middle">异常分支 · 单 Agent 受控 failed</text>
+              <text class="d-note" x="580" y="368" text-anchor="middle">任一步骤抛异常即进入本分支</text>
+              <text class="d-note" x="580" y="390" text-anchor="middle">AgentResult(status="failed")</text>
+              <text class="d-note" x="580" y="410" text-anchor="middle">error.code = agent_execution_failed</text>
+              <text class="d-note" x="580" y="436" text-anchor="middle">其余专业 Agent 继续执行</text>
+              <text class="d-note" x="580" y="456" text-anchor="middle">汇总器保留其余可用信息</text>
+
+              <line class="d-dashed" x1="400" y1="348" x2="430" y2="348" marker-end="url(#flow-arrow)" />
+              <line class="d-dashed" x1="400" y1="420" x2="430" y2="420" marker-end="url(#flow-arrow)" />
+              <line class="d-dashed" x1="400" y1="492" x2="430" y2="492" marker-end="url(#flow-arrow)" />
+              <line class="d-dashed" x1="400" y1="564" x2="430" y2="564" marker-end="url(#flow-arrow)" />
+
+              <!-- 汇总 Agent -->
+              <line class="d-arrow" x1="285" y1="587" x2="285" y2="630" marker-end="url(#flow-arrow)" />
+              <rect class="d-chain" x="170" y="630" width="230" height="46" rx="8" />
+              <text class="d-title" x="180" y="649" text-anchor="start">汇总 Agent</text>
+              <text class="d-note" x="180" y="666" text-anchor="start">聚合四结果 · 去重来源 · 顶层状态 · Markdown</text>
+
+              <polyline class="d-dashed" points="580,598 580,653 400,653" marker-end="url(#flow-arrow)" />
+
+              <text class="d-note" x="160" y="700" text-anchor="start">顶层状态由专业结果汇总决定：存在 failed → failed；有 partial / degraded → degraded；否则 success</text>
+
+              <!-- 返回文档 -->
+              <line class="d-arrow" x1="450" y1="720" x2="450" y2="756" marker-end="url(#flow-arrow)" />
+              <rect class="d-chain" x="270" y="756" width="360" height="66" rx="10" />
+              <text class="d-title" x="450" y="780" text-anchor="middle">返回 TravelPlanDocument</text>
+              <text class="d-sub" x="450" y="800" text-anchor="middle">itinerary · markdown · sources · warnings · status</text>
+              <text class="d-sub" x="450" y="816" text-anchor="middle">status ∈ success / degraded / failed</text>
+
+              <line class="d-arrow" x1="450" y1="822" x2="450" y2="856" marker-end="url(#flow-arrow)" />
+
+              <!-- 前端净化 Markdown -->
+              <rect class="d-chain" x="270" y="856" width="360" height="66" rx="10" />
+              <text class="d-title" x="450" y="880" text-anchor="middle">前端净化渲染</text>
+              <text class="d-sub" x="450" y="900" text-anchor="middle">marked.parse → DOMPurify.sanitize</text>
+              <text class="d-sub" x="450" y="916" text-anchor="middle">禁止 script / style / svg / math 标签与 on* 属性</text>
+            </svg>
+          </div>
+          <figcaption>图 2 · 旅行规划端到端流程（含单 Agent 异常分支）</figcaption>
+        </figure>
+
+        <div class="note" role="note">
+          <p><strong>流程关键约束：</strong></p>
+          <ul>
+            <li><code>itinerary</code> 是唯一机器可消费的事实载体；<code>markdown</code> 是汇总 Agent 按 <code>itinerary</code> 生成的阅读表现层，不能反向解析为事实。</li>
+            <li>顶层 <code>status</code> 由专业 Agent 状态汇总决定：存在任意 <code>failed</code> 时顶层为 <code>failed</code>；存在 <code>partial</code> 或 <code>degraded</code> 时顶层为 <code>degraded</code>；否则为 <code>success</code>。</li>
+            <li>前端只调用同源相对路径 <code>/api/travel-plans</code>，不接触服务端供应商密钥；Markdown 先由 <code>marked.parse</code> 转换、再由 <code>DOMPurify.sanitize</code> 净化，禁止 <code>script</code> / <code>style</code> / <code>svg</code> / <code>math</code> 标签与 <code>on*</code> 属性。</li>
+          </ul>
+        </div>
       </section>
 
       <section id="document-flow" aria-labelledby="document-flow-heading">
