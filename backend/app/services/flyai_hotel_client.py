@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
+import sys
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
 from typing import Any
@@ -62,7 +64,6 @@ class FlyAIHotelClient:
                 "--check-in-date", request.check_in.isoformat(),
                 "--check-out-date", request.check_out.isoformat(),
                 "--sort", request.sort,
-                "--limit", str(request.limit),
             )
         )
         if request.max_price is not None:
@@ -99,13 +100,13 @@ class FlyAIHotelClient:
                         hotel_id=item.get("shId"),
                         name=item.get("name"),
                         address=item.get("address"),
-                        latitude=item.get("latitude", item.get("lat")),
-                        longitude=item.get("longitude", item.get("lon")),
+                        latitude=_as_decimal(item.get("latitude", item.get("lat"))),
+                        longitude=_as_decimal(item.get("longitude", item.get("lon"))),
                         main_pic=_https_url(item.get("mainPic")),
                         detail_url=_https_url(item.get("detailUrl")),
-                        price=item.get("price"),
-                        score=item.get("score"),
-                        star=item.get("star"),
+                        price=_as_decimal(item.get("price")),
+                        score=_as_decimal(item.get("score")),
+                        star=_as_int(item.get("star")),
                     )
                 )
             except (ValidationError, TypeError, ValueError):
@@ -117,13 +118,7 @@ def _subprocess_runner(api_key: str) -> Runner:
     async def run(command: str, args: list[str], timeout: float) -> tuple[int, str, str]:
         environment = os.environ.copy()
         environment["FLYAI_API_KEY"] = api_key
-        process = await asyncio.create_subprocess_exec(
-            command,
-            *args,
-            env=environment,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        process = await _spawn_command(command, args, environment)
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
@@ -135,11 +130,54 @@ def _subprocess_runner(api_key: str) -> Runner:
     return run
 
 
+def _resolve_command(command: str) -> str | list[str]:
+    """返回可直接 create_subprocess_exec 的命令形式。
+
+    Windows 上 npm 全局 CLI 是 .CMD/.BAT 批处理 shim，CreateProcess 无法直接
+    执行，需要 cmd.exe /c 包装；非 Windows 直接返回原命令。
+    """
+
+    if sys.platform != "win32":
+        return command
+    path = shutil.which(command)
+    if path and (path.lower().endswith(".cmd") or path.lower().endswith(".bat")):
+        comspec = os.environ.get("COMSPEC") or "cmd.exe"
+        return [comspec, "/c", path]
+    return command
+
+
+async def _spawn_command(command: str, args: list[str], environment) -> asyncio.subprocess.Process:
+    resolved = _resolve_command(command)
+    if isinstance(resolved, list):
+        return await asyncio.create_subprocess_exec(
+            *resolved,
+            *args,
+            env=environment,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    return await asyncio.create_subprocess_exec(
+        resolved,
+        *args,
+        env=environment,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+
 def _stdout_from_runner_result(raw: str | tuple[int, str, str]) -> str | None:
+    """提取 CLI stdout；只要非空文本即返回，退出码不作为唯一成功依据。
+
+    实测 Windows 上官方 flyai CLI 会输出有效 JSON 到 stdout，但 libuv 断言使
+    进程退出码为 127。若严格按退出码判断会拒绝有效结果，因此这里只要求
+    stdout 非空；JSON 结构与语义由调用方在解析时校验。
+    """
+
     if isinstance(raw, str):
         return raw
     if isinstance(raw, tuple) and len(raw) == 3:
-        return raw[1] if raw[0] == 0 and isinstance(raw[1], str) else None
+        stdout = raw[1]
+        return stdout if isinstance(stdout, str) and stdout.strip() else None
     return None
 
 
@@ -150,6 +188,39 @@ def _https_url(value: object) -> str | None:
     if parsed.scheme.lower() != "https" or not parsed.netloc:
         return None
     return value
+
+
+def _as_decimal(value: object) -> Decimal | None:
+    """从整数、小数或货币字符串（如“¥30”）提取 Decimal；无法解析返回 None。"""
+
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return Decimal(str(value))
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip().replace("¥", "").replace("￥", "").replace(",", "")
+    if not cleaned:
+        return None
+    try:
+        return Decimal(cleaned)
+    except Exception:
+        return None
+
+
+def _as_int(value: object) -> int | None:
+    """从数字或数字字符串提取 int；非数字星级等文本返回 None，不伪造。"""
+
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _decimal_text(value: Decimal) -> str:

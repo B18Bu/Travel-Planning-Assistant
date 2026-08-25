@@ -38,7 +38,7 @@ async def test_search_hotels_builds_safe_cli_args_and_projects_whitelist(hotel_r
                 "search-hotel", "--dest-name", "杭州", "--poi-name", "西湖",
                 "--check-in-date", hotel_request.check_in.isoformat(),
                 "--check-out-date", hotel_request.check_out.isoformat(),
-                "--sort", "price_desc", "--limit", "5", "--max-price", "500",
+                "--sort", "price_desc", "--max-price", "500",
             ],
             30.0,
         )
@@ -76,6 +76,20 @@ async def test_missing_price_stays_none_and_non_https_links_are_not_projected(ho
     assert result[0].price is None
     assert result[0].main_pic is None
     assert result[0].detail_url is None
+
+
+@pytest.mark.asyncio
+async def test_projects_currency_price_and_discards_text_star(hotel_request):
+    # 官方 CLI 返回 price 为“¥30”货币字符串、star 为“经济型”文本星级。
+    async def fake_run(command, args, timeout):
+        return '{"data":{"itemList":[{"name":"青年旅舍","shId":"1","latitude":"30.29","longitude":"120.20","price":"¥30","score":"4.5","star":"经济型"}]}}'
+
+    result = await FlyAIHotelClient("secret", runner=fake_run).search_hotels(hotel_request)
+
+    assert result[0].price == Decimal("30")
+    assert result[0].score == Decimal("4.5")
+    assert result[0].star is None
+    assert result[0].latitude == Decimal("30.29")
 
 
 @pytest.mark.asyncio
