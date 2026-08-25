@@ -59,8 +59,9 @@ class TicketSearchResponse(BaseModel):
 
     source_name: str
     retrieved_at: str
-    data_status: Literal["mock", "realtime", "degraded"]
+    data_status: Literal["mock", "realtime", "degraded", "flyai_text"]
     scenic_keyword: str
     visitor_count: int
     tickets: tuple[TicketProduct, ...] = ()
     warnings: tuple[str, ...] = ()
+    summary: str | None = None
