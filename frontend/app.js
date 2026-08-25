@@ -426,6 +426,28 @@
 
   function renderTicketResults(payload) {
     ticketResults.replaceChildren();
+    if (payload.data_status === "flyai_text") {
+      const card = document.createElement("article");
+      card.className = "fliggy-ticket-card";
+      const title = document.createElement("h3");
+      title.textContent = payload.scenic_keyword || "门票信息";
+      const summary = document.createElement("p");
+      summary.textContent = payload.summary || "未找到相关门票信息，请调整关键词后重试。";
+      const meta = document.createElement("p");
+      const source = typeof payload.source_name === "string" ? payload.source_name : "飞猪 AI 开放平台";
+      const retrievedAt = typeof payload.retrieved_at === "string" ? payload.retrieved_at : "";
+      meta.textContent = `来源：${source}${retrievedAt ? ` · 查询时间：${retrievedAt}` : ""}`;
+      card.append(title, summary, meta);
+      ticketResults.appendChild(card);
+      (Array.isArray(payload.warnings) ? payload.warnings : ["FlyAI 文本检索结果，不代表实时可售状态。"]).forEach((text) => {
+        const warning = document.createElement("p");
+        warning.className = "fliggy-notice";
+        warning.textContent = text;
+        ticketResults.appendChild(warning);
+      });
+      ticketResults.hidden = false;
+      return;
+    }
     const tickets = Array.isArray(payload.tickets) ? payload.tickets : [];
     if (!tickets.length) {
       const empty = document.createElement("p");
