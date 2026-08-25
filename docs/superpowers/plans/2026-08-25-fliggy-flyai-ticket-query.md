@@ -74,15 +74,17 @@ def test_provider_rejects_top() -> None:
 
 ## 阶段 B：客户端和服务
 
-### 任务 3：实现 FlyAI 客户端
+### 任务 3：实现 FlyAI CLI 客户端
+
+**命令决策：** Quickstart 示例命令 `fliggy-fast-search` 不在当前官方 skill 的正式命令表（`keyword-search`/`ai-search`/`search-flight`/`search-train`/`search-hotel`/`search-poi`/`search-marriott-hotel`/`search-marriott-package`）中，不能当作稳定合同。本任务采用正式命令 **`ai-search --query`**：其响应 `data` 字段为文本字符串，可直接作为 `summary`，符合“不解析价格/库存/SKU”的文本摘要设计；且不需要城市字段（`search-poi` 要求必填 `--city-name`，与现有 `scenic_keyword` 输入不一致）。调用方式采用 CLI 子进程（`asyncio.create_subprocess_exec`），与并行酒店任务 `FlyAIHotelClient` 模式一致；认证由 CLI 通过环境变量 `FLYAI_API_KEY` 管理，后端不猜测 MCP endpoint 和工具 schema。
 
 **文件：** 创建 `backend/app/services/fliggy_flyai_client.py`；测试 `backend/tests/test_fliggy_flyai_client.py`。
 
-- [ ] **步骤 1：编写失败测试**：用 `httpx.MockTransport` 验证 `Authorization: Bearer <server key>`、请求含景点和日期、不含姓名/证件/手机号/Key；另测 `httpx.ReadTimeout` 映射 `FlyAIUpstreamError`。
+- [ ] **步骤 1：编写失败测试**：用注入的 fake runner 验证命令与参数（`ai-search --query <关键词> 门票 ...`）、环境变量注入 `FLYAI_API_KEY`、stdout JSON 的 `data` 文本字段提取与截断；另测超时映射 `FlyAIUpstreamError("TIMEOUT")`、退出码非 0 映射 `CLI_ERROR`、JSON 解析失败或 `data` 非字符串映射 `INVALID_RESPONSE`；断言任何参数和异常信息不含真实 Key。
 - [ ] **步骤 2：运行失败测试**：预期客户端类和异常不存在。
-- [ ] **步骤 3：实现最少客户端**：定义异步 `FlyAIClient.search(scenic_keyword, entry_date) -> str`；固定只读提示词；使用注入的 `httpx.AsyncBaseTransport` 和 endpoint；捕获 timeout、请求、HTTP 状态错误，统一抛受控异常；只接受 JSON 字符串文本字段并截断到 8000 字符；绝不记录 Key。生产 endpoint 必须依据官方后端合同配置，不能由 CLI 名称猜测。
+- [ ] **步骤 3：实现最少客户端**：定义异步 `FlyAIClient.search(scenic_keyword, entry_date) -> str`；构造只读提示词（含关键词和日期，要求仅返回景点门票信息、不预订不下单不支付、不含身份信息）；使用注入的 runner（默认 `_subprocess_runner` 注入 `FLYAI_API_KEY` 环境变量）；捕获超时、异常、退出码和 JSON 结构错误，统一抛受控 `FlyAIUpstreamError`；只取 JSON `data` 字符串并截断到 8000 字符；绝不记录或返回密钥。
 - [ ] **步骤 4：运行客户端测试**：预期 PASS。
-- [ ] **步骤 5：Commit**：`git add backend/app/services/fliggy_flyai_client.py backend/tests/test_fliggy_flyai_client.py`；`git commit -m "feat: 增加 FlyAI 门票查询客户端"`。
+- [ ] **步骤 5：Commit**：`git add backend/app/services/fliggy_flyai_client.py backend/tests/test_fliggy_flyai_client.py`；`git commit -m "feat: 增加 FlyAI 门票 CLI 客户端"`。
 
 ### 任务 4：实现文本服务
 
