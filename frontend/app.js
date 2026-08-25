@@ -28,6 +28,12 @@
   const libraryStatus = document.getElementById("library-status");
   const libraryList = document.getElementById("library-list");
   const libraryDetail = document.getElementById("library-detail");
+  const ticketForm = document.getElementById("ticket-form");
+  const ticketEntryDate = document.getElementById("ticket-entry-date");
+  const ticketSubmit = document.getElementById("ticket-submit");
+  const ticketServiceStatus = document.getElementById("ticket-service-status");
+  const ticketResults = document.getElementById("ticket-results");
+  const fliggyConsentMask = document.getElementById("fliggy-consent-mask");
   const result = taskView;
   const tasks = [];
   let documents = [];
@@ -44,6 +50,9 @@
   let pendingDeleteId = null;
   let requestController = null;
   let requestGeneration = 0;
+  let fliggyStatus = { available: false, message: "飞猪门票查询服务尚未配置" };
+  let pendingFliggySubmit = false;
+  const FLIGGY_CONSENT_KEY = "fliggy-ticket-query-consent";
 
   function todayIso() {
     const today = new Date();
@@ -312,6 +321,131 @@
     activeDocumentDetailId = null;
   }
 
+  function hasFliggyConsent() {
+    try {
+      return sessionStorage.getItem(FLIGGY_CONSENT_KEY) === "accepted";
+    } catch {
+      return false;
+    }
+  }
+
+  function saveFliggyConsent() {
+    try {
+      sessionStorage.setItem(FLIGGY_CONSENT_KEY, "accepted");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function loadFliggyStatus() {
+    ticketSubmit.disabled = true;
+    ticketServiceStatus.textContent = "正在检查飞猪门票查询服务…";
+    try {
+      const response = await fetch("/api/fliggy/status");
+      const payload = await response.json();
+      fliggyStatus = {
+        available: payload.available === true,
+        message: typeof payload.message === "string" ? payload.message : "飞猪门票查询服务暂不可用",
+      };
+    } catch {
+      fliggyStatus = { available: false, message: "飞猪门票查询服务暂不可用" };
+    }
+    ticketServiceStatus.textContent = fliggyStatus.message;
+    ticketSubmit.disabled = !fliggyStatus.available;
+    if (!fliggyStatus.available) {
+      ticketResults.replaceChildren();
+      ticketResults.hidden = true;
+    }
+  }
+
+  function closeFliggyConsent(event) {
+    if (event && event.target !== event.currentTarget) return;
+    pendingFliggySubmit = false;
+    fliggyConsentMask.classList.remove("show");
+  }
+
+  function acceptFliggyConsent() {
+    if (!saveFliggyConsent()) {
+      closeFliggyConsent();
+      return;
+    }
+    fliggyConsentMask.classList.remove("show");
+    if (pendingFliggySubmit) submitTicketSearch();
+    pendingFliggySubmit = false;
+  }
+
+  function requestFliggyConsent() {
+    if (hasFliggyConsent()) return true;
+    pendingFliggySubmit = true;
+    fliggyConsentMask.classList.add("show");
+    return false;
+  }
+
+  async function submitTicketSearch(event) {
+    if (event) event.preventDefault();
+    if (!fliggyStatus.available) return;
+    if (!requestFliggyConsent()) return;
+    ticketSubmit.disabled = true;
+    ticketServiceStatus.textContent = "正在查询飞猪门票信息…";
+    ticketResults.replaceChildren();
+    ticketResults.hidden = true;
+    try {
+      const formData = new FormData(ticketForm);
+      const response = await fetch("/api/fliggy/tickets/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scenic_keyword: formData.get("scenic_keyword"),
+          entry_date: formData.get("entry_date"),
+          visitor_count: Number(formData.get("visitor_count")),
+        }),
+      });
+      if (!response.ok) throw new Error(await nonOkMessage(response));
+      const payload = await response.json();
+      renderTicketResults(payload);
+    } catch (requestError) {
+      ticketServiceStatus.textContent = `实时查询暂不可用：${documentErrorMessage(requestError, "请稍后重试。")}`;
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "btn-ghost";
+      retry.textContent = "重试";
+      retry.addEventListener("click", () => submitTicketSearch());
+      ticketResults.replaceChildren(retry);
+      ticketResults.hidden = false;
+    } finally {
+      ticketSubmit.disabled = !fliggyStatus.available;
+    }
+  }
+
+  function renderTicketResults(payload) {
+    ticketResults.replaceChildren();
+    const tickets = Array.isArray(payload.tickets) ? payload.tickets : [];
+    if (!tickets.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "未找到已接入的门票商品，请调整关键词后重试。";
+      ticketResults.appendChild(empty);
+    }
+    tickets.forEach((ticket) => {
+      const card = document.createElement("article");
+      card.className = "fliggy-ticket-card";
+      const title = document.createElement("h3");
+      title.textContent = ticket.item_name || "未命名门票商品";
+      const meta = document.createElement("p");
+      meta.textContent = [ticket.ticket_type, ticket.entry_date, ticket.entry_type].filter(Boolean).join(" · ");
+      card.append(title, meta);
+      const note = document.createElement("p");
+      note.textContent = "价格和库存仅代表查询时刻，不代表最终可售或预订成功。";
+      card.appendChild(note);
+      ticketResults.appendChild(card);
+    });
+    const warning = document.createElement("p");
+    warning.className = "fliggy-notice";
+    warning.textContent = "本系统仅提供门票信息查询，请通过飞猪官方渠道完成购买。";
+    ticketResults.appendChild(warning);
+    ticketResults.hidden = false;
+  }
+
   function showView(name) {
     activeView = name;
     if (name !== "library") cancelLibraryRequests();
@@ -321,10 +455,13 @@
     const library = document.getElementById("nav-library");
     const plan = document.getElementById("nav-plan");
     const guide = document.getElementById("nav-guide");
+    const ticket = document.getElementById("nav-ticket");
     if (dashboard) dashboard.classList.toggle("active", name === "dashboard");
     if (library) library.classList.toggle("active", name === "library");
     if (plan) plan.classList.toggle("active", name === "plan");
     if (guide) guide.classList.toggle("active", name === "guide");
+    if (ticket) ticket.classList.toggle("active", name === "ticket");
+    if (name === "ticket") loadFliggyStatus();
     if (name === "dashboard") loadDashboardStats();
     if (name === "library") loadDocuments();
     if (name !== "dashboard") renderNav();
@@ -1140,11 +1277,13 @@
   }
 
   departureInput.min = todayIso();
+  ticketEntryDate.min = todayIso();
 
   startExperienceButton.addEventListener("click", startExperience);
   backToIntroButton.addEventListener("click", showIntro);
   newPlanButton.addEventListener("click", startNewPlan);
   form.addEventListener("submit", submitPlan);
+  ticketForm.addEventListener("submit", submitTicketSearch);
   documentUpload.addEventListener("change", uploadDocument);
   document.getElementById("intro").setAttribute("aria-hidden", "false");
   renderNav();
@@ -1154,6 +1293,8 @@
   window.startExperience = startExperience;
   window.showIntro = showIntro;
   window.showView = showView;
+  window.closeFliggyConsent = closeFliggyConsent;
+  window.acceptFliggyConsent = acceptFliggyConsent;
   window.renderNav = renderNav;
   window.resetPlanForm = resetPlanForm;
   window.toggleHistory = toggleHistory;

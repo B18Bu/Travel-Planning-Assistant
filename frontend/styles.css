@@ -157,6 +157,16 @@
   .home-welcome h2 { font-size: 42px; font-weight: 800; color: var(--accent); letter-spacing: 1px; }
   .home-welcome p { color: var(--text-dim); margin-top: 8px; font-size: 14px; }
   .feature-page { max-width: 1080px; margin: 8px auto 0; }
+  .fliggy-page { max-width: 960px; }
+  .fliggy-form { display: grid; gap: 16px; max-width: 560px; }
+  .fliggy-form label { display: grid; gap: 7px; color: var(--text-dim); font-size: 13px; }
+  .fliggy-form input { width: 100%; box-sizing: border-box; }
+  .fliggy-status { min-height: 1.5em; color: var(--text-dim); }
+  .fliggy-results { margin-top: 24px; display: grid; gap: 14px; }
+  .fliggy-ticket-card { padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+  .fliggy-ticket-card h3 { margin: 0 0 8px; }
+  .fliggy-ticket-card p { margin: 6px 0 0; color: var(--text-dim); line-height: 1.7; }
+  .fliggy-notice { color: var(--text-dim); font-size: 13px; line-height: 1.7; }
   .feature-page > .home-welcome { margin-bottom: 24px; }
   .feature-page-head { margin-bottom: 20px; }
   .feature-page-head h2 { margin-top: 6px; font-size: 28px; }

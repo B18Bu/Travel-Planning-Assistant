@@ -68,7 +68,7 @@
         </div>
       </div>
 
-      <div class="side-section"><div class="side-label">功能</div><button class="side-nav" id="nav-plan" onclick="showView('plan')"><span>🧭</span> 行程规划</button><button class="side-nav" id="nav-guide" onclick="showView('guide')"><span>🔎</span> 攻略查询</button></div>
+      <div class="side-section"><div class="side-label">功能</div><button class="side-nav" id="nav-plan" onclick="showView('plan')"><span>🧭</span> 行程规划</button><button class="side-nav" id="nav-guide" onclick="showView('guide')"><span>🔎</span> 攻略查询</button><button class="side-nav" id="nav-ticket" onclick="showView('ticket')"><span>🎟️</span> 门票查询</button></div>
 
       <div class="side-section">
         <div class="side-label">管理</div>
@@ -207,6 +207,25 @@
         </div>
       </section>
 
+      <section id="view-ticket" class="view">
+        <div class="feature-page fliggy-page">
+          <div class="feature-page-head">
+            <div>Fliggy Ticket Search</div>
+            <h2>门票查询</h2>
+            <p>查询景点门票、指定日期价格、库存和入园规则。当前仅提供查询，不创建订单或处理支付。</p>
+          </div>
+          <p id="ticket-service-status" class="fliggy-status" role="status" aria-live="polite"></p>
+          <form id="ticket-form" class="fliggy-form">
+            <label>景点关键词<input id="ticket-scenic-keyword" name="scenic_keyword" maxlength="100" placeholder="例如：西湖" required></label>
+            <label>入园日期<input id="ticket-entry-date" name="entry_date" type="date" required></label>
+            <label>游客人数<input id="ticket-visitor-count" name="visitor_count" type="number" min="1" max="20" value="1" required></label>
+            <button id="ticket-submit" class="btn-primary" type="submit" disabled>查询门票</button>
+          </form>
+          <p class="fliggy-notice">本系统仅提供门票信息查询，请通过飞猪官方渠道完成购买。本页面不收集游客身份信息，不创建订单或处理支付。</p>
+          <section id="ticket-results" class="fliggy-results" hidden></section>
+        </div>
+      </section>
+
       <!-- 任务结果视图 -->
       <section id="view-task" class="view"></section>
 
@@ -277,6 +296,23 @@
         <div class="panel panel-note">💡 评价数据来自知识检索结果下方的「有用 / 没用」反馈。</div>
       </section>
     </main>
+  </div>
+</div>
+
+<!-- 飞猪门票查询同意弹窗 -->
+<div class="modal-mask" id="fliggy-consent-mask" onclick="closeFliggyConsent(event)">
+  <div class="modal modal-sm" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <span class="modal-title">飞猪实时查询说明</span>
+      <button class="modal-close" onclick="closeFliggyConsent()" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <p>本次查询将向飞猪发送景点关键词、入园日期及必要查询参数。游客人数仅用于本页面校验和结果展示，不会发送给飞猪。本系统不收集姓名、身份证、手机号或护照信息，也不代为下单和支付。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-ghost" type="button" onclick="closeFliggyConsent()">拒绝</button>
+      <button class="btn-primary" type="button" onclick="acceptFliggyConsent()">同意并查询</button>
+    </div>
   </div>
 </div>
 

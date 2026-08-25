@@ -32,6 +32,18 @@ async def test_root_serves_same_origin_frontend_page():
     assert 'name="departure_date"' in response.text
 
 
+def test_frontend_uses_ticket_query_view():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "门票查询" in html
+    assert 'id="view-ticket"' in html
+    assert 'id="ticket-form"' in html
+    assert '"/api/fliggy/status"' in script
+    assert "sessionStorage" in script
+    assert "预订" not in html
+
+
 def test_frontend_has_intro_and_real_workspace_views():
     html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
 
