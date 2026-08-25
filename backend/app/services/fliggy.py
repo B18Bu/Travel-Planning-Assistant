@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.models.fliggy import (
     FliggyServiceStatus,
+    TicketPoiReference,
     TicketProduct,
     TicketSearchRequest,
     TicketSearchResponse,
@@ -96,8 +97,10 @@ class FlyAIFliggyTicketService:
         return FliggyServiceStatus(available=True, message="FlyAI 门票文本检索服务")
 
     async def search_tickets(self, request: TicketSearchRequest) -> TicketSearchResponse:
-        summary = await self._client.search(request.scenic_keyword, request.entry_date)
         retrieved_at = datetime.now(timezone.utc).isoformat()
+        if request.city_name.strip():
+            return await self._search_poi(request, retrieved_at)
+        summary = await self._client.search(request.scenic_keyword, request.entry_date)
         if not summary or not summary.strip():
             return TicketSearchResponse(
                 source_name="飞猪 AI 开放平台",
@@ -119,4 +122,45 @@ class FlyAIFliggyTicketService:
                 "价格信息暂不可用。",
                 "库存信息暂不可用。请以飞猪官方页面为准。",
             ),
+        )
+
+    async def _search_poi(
+        self, request: TicketSearchRequest, retrieved_at: str
+    ) -> TicketSearchResponse:
+        pois = await self._client.search_poi(request.city_name, request.scenic_keyword)
+        poi_results = tuple(
+            TicketPoiReference(
+                poi_name=poi.poi_name,
+                address=poi.address,
+                category=poi.category,
+                ticket_name=poi.ticket_name,
+                price_text=poi.price_text,
+                price_date=poi.price_date,
+                description=poi.description,
+            )
+            for poi in pois
+        )
+        if not poi_results:
+            return TicketSearchResponse(
+                source_name="飞猪 AI 开放平台",
+                retrieved_at=retrieved_at,
+                data_status="flyai_text",
+                scenic_keyword=request.scenic_keyword,
+                city_name=request.city_name,
+                visitor_count=request.visitor_count,
+                warnings=("未找到相关门票信息，请调整关键词或城市后重试。",),
+            )
+        summary = next(
+            (poi.description for poi in poi_results if poi.description), None
+        )
+        return TicketSearchResponse(
+            source_name="飞猪 AI 开放平台",
+            retrieved_at=retrieved_at,
+            data_status="flyai_text",
+            scenic_keyword=request.scenic_keyword,
+            city_name=request.city_name,
+            visitor_count=request.visitor_count,
+            poi_results=poi_results,
+            summary=summary,
+            warnings=("门票价格与票种为飞猪平台参考信息，以官方页面为准，不代表实时可售状态。",),
         )

@@ -128,6 +128,40 @@ def test_resolve_command_wraps_cmd_shim_on_windows(monkeypatch):
     assert "/c" in resolved
 
 
+@pytest.mark.asyncio
+async def test_search_poi_builds_safe_args_and_extracts_ticket_fields() -> None:
+    calls = []
+
+    async def fake_run(command, args, timeout):
+        calls.append((command, args, timeout))
+        return '{"data":{"itemList":[{"name":"八达岭长城","address":"北京市延庆区G6京藏高速58号出口","category":"历史古迹","description":"八达岭长城简介。","ticketInfo":{"price":"¥198","ticketName":"夜场票 不限人群","priceDate":"2026-08-26"}}]}}'
+
+    client = FlyAIClient("server-secret", runner=fake_run)
+    result = await client.search_poi("北京", "八达岭长城")
+
+    assert calls[0][1] == ["search-poi", "--city-name", "北京", "--keyword", "八达岭长城"]
+    assert all("server-secret" not in arg for arg in calls[0][1])
+    assert len(result) == 1
+    assert result[0].poi_name == "八达岭长城"
+    assert result[0].address == "北京市延庆区G6京藏高速58号出口"
+    assert result[0].price_text == "¥198"
+    assert result[0].ticket_name == "夜场票 不限人群"
+    assert result[0].category == "历史古迹"
+
+
+@pytest.mark.asyncio
+async def test_search_poi_keeps_missing_ticket_info_as_none() -> None:
+    async def fake_run(command, args, timeout):
+        return '{"data":{"itemList":[{"name":"中国长城博物馆","address":"延庆区八达岭镇","category":"博物馆"},{"category":"博物馆"}]}}'
+
+    result = await FlyAIClient("server-secret", runner=fake_run).search_poi("北京", "长城")
+
+    assert result[0].price_text is None
+    assert result[0].ticket_name is None
+    # 缺 name 字段的条目被跳过，不伪造。
+    assert len(result) == 1
+
+
 def test_resolve_command_keeps_plain_command_on_non_windows(monkeypatch):
     from app.services import fliggy_flyai_client as module
 

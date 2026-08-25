@@ -403,6 +403,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scenic_keyword: formData.get("scenic_keyword"),
+          city_name: formData.get("city_name") || "",
           entry_date: formData.get("entry_date"),
           visitor_count: Number(formData.get("visitor_count")),
         }),
@@ -427,18 +428,48 @@
   function renderTicketResults(payload) {
     ticketResults.replaceChildren();
     if (payload.data_status === "flyai_text") {
-      const card = document.createElement("article");
-      card.className = "fliggy-ticket-card";
-      const title = document.createElement("h3");
-      title.textContent = payload.scenic_keyword || "门票信息";
-      const summary = document.createElement("p");
-      summary.textContent = payload.summary || "未找到相关门票信息，请调整关键词后重试。";
-      const meta = document.createElement("p");
-      const source = typeof payload.source_name === "string" ? payload.source_name : "飞猪 AI 开放平台";
-      const retrievedAt = typeof payload.retrieved_at === "string" ? payload.retrieved_at : "";
-      meta.textContent = `来源：${source}${retrievedAt ? ` · 查询时间：${retrievedAt}` : ""}`;
-      card.append(title, summary, meta);
-      ticketResults.appendChild(card);
+      const pois = Array.isArray(payload.poi_results) ? payload.poi_results : [];
+      if (pois.length) {
+        pois.forEach((poi) => {
+          const card = document.createElement("article");
+          card.className = "fliggy-ticket-card";
+          const title = document.createElement("h3");
+          title.textContent = poi.poi_name || "门票信息";
+          const meta = document.createElement("p");
+          meta.textContent = [poi.category, poi.address].filter(Boolean).join(" · ");
+          card.appendChild(title);
+          if (meta.textContent) card.appendChild(meta);
+          const price = document.createElement("p");
+          price.textContent = poi.price_text
+            ? `参考价：${poi.price_text}${poi.ticket_name ? `（${poi.ticket_name}）` : ""}，以飞猪官方页面为准`
+            : "价格信息暂不可用";
+          card.appendChild(price);
+          if (poi.ticket_name && !poi.price_text) {
+            const ticket = document.createElement("p");
+            ticket.textContent = `票种：${poi.ticket_name}`;
+            card.appendChild(ticket);
+          }
+          if (poi.description) {
+            const desc = document.createElement("p");
+            desc.textContent = poi.description;
+            card.appendChild(desc);
+          }
+          ticketResults.appendChild(card);
+        });
+      } else {
+        const card = document.createElement("article");
+        card.className = "fliggy-ticket-card";
+        const title = document.createElement("h3");
+        title.textContent = payload.scenic_keyword || "门票信息";
+        const summary = document.createElement("p");
+        summary.textContent = payload.summary || "未找到相关门票信息，请调整关键词后重试。";
+        const meta = document.createElement("p");
+        const source = typeof payload.source_name === "string" ? payload.source_name : "飞猪 AI 开放平台";
+        const retrievedAt = typeof payload.retrieved_at === "string" ? payload.retrieved_at : "";
+        meta.textContent = `来源：${source}${retrievedAt ? ` · 查询时间：${retrievedAt}` : ""}`;
+        card.append(title, summary, meta);
+        ticketResults.appendChild(card);
+      }
       (Array.isArray(payload.warnings) ? payload.warnings : ["FlyAI 文本检索结果，不代表实时可售状态。"]).forEach((text) => {
         const warning = document.createElement("p");
         warning.className = "fliggy-notice";

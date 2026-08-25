@@ -6,9 +6,23 @@ import os
 import shutil
 import sys
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import date
 
 Runner = Callable[[str, list[str], float], Awaitable[str | tuple[int, str, str]]]
+
+
+@dataclass(frozen=True)
+class FlyAIPoiTicket:
+    """search-poi 返回的景点门票参考；价格与票种为官方参考，非实时保证。"""
+
+    poi_name: str
+    address: str | None = None
+    category: str | None = None
+    ticket_name: str | None = None
+    price_text: str | None = None
+    price_date: str | None = None
+    description: str | None = None
 
 
 class FlyAIUpstreamError(RuntimeError):
@@ -84,6 +98,66 @@ class FlyAIClient:
         if not isinstance(data, str):
             raise FlyAIUpstreamError("INVALID_RESPONSE")
         return data[: self._summary_max_length]
+
+    async def search_poi(self, city_name: str, keyword: str) -> list[FlyAIPoiTicket]:
+        """按城市与景点关键词查询结构化景点门票参考（search-poi）。"""
+
+        args = ["search-poi", "--city-name", city_name, "--keyword", keyword]
+
+        try:
+            raw = await self._runner(self._command, args, self._timeout_seconds)
+        except (asyncio.TimeoutError, TimeoutError):
+            raise FlyAIUpstreamError("TIMEOUT") from None
+        except Exception:
+            raise FlyAIUpstreamError("CLI_ERROR") from None
+
+        stdout = _stdout_from_runner_result(raw)
+        if stdout is None:
+            raise FlyAIUpstreamError("CLI_ERROR")
+        try:
+            body = json.loads(stdout)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raise FlyAIUpstreamError("INVALID_RESPONSE") from None
+        if not isinstance(body, dict):
+            raise FlyAIUpstreamError("INVALID_RESPONSE")
+        data = body.get("data")
+        items = data.get("itemList") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise FlyAIUpstreamError("INVALID_RESPONSE")
+
+        results: list[FlyAIPoiTicket] = []
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip():
+                continue
+            ticket_info = item.get("ticketInfo") if isinstance(item.get("ticketInfo"), dict) else {}
+            results.append(
+                FlyAIPoiTicket(
+                    poi_name=item["name"].strip(),
+                    address=item.get("address") if isinstance(item.get("address"), str) else None,
+                    category=item.get("category") if isinstance(item.get("category"), str) else None,
+                    ticket_name=(
+                        ticket_info.get("ticketName")
+                        if isinstance(ticket_info.get("ticketName"), str)
+                        else None
+                    ),
+                    price_text=(
+                        ticket_info.get("price")
+                        if isinstance(ticket_info.get("price"), str)
+                        else None
+                    ),
+                    price_date=(
+                        ticket_info.get("priceDate")
+                        if isinstance(ticket_info.get("priceDate"), str)
+                        else None
+                    ),
+                    description=(
+                        item.get("description")
+                        if isinstance(item.get("description"), str)
+                        else None
+                    ),
+                )
+            )
+        return results
 
 
 def _subprocess_runner(api_key: str) -> Runner:

@@ -42,3 +42,16 @@ def test_show_view_declares_hotel_nav_before_using_it():
     block = script[start:start + 2000]
     assert 'const hotel = document.getElementById("nav-hotel")' in block
     assert "if (hotel)" in block
+
+
+def test_frontend_has_city_field_and_renders_poi_price():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    # 门票表单提供城市输入，用于 search-poi 定位景点并返回参考价。
+    assert 'name="city_name"' in html
+    assert "ticket-city-name" in html
+    # 前端能渲染 poi_results 结构化条目（地址、票名、参考价）。
+    assert "poi_results" in script
+    assert "price_text" in script
+    assert "参考" in script
