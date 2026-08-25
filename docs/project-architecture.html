@@ -300,6 +300,10 @@
       background: var(--diagram-container-fill);
       border-color: var(--diagram-container-stroke);
     }
+    .legend .swatch-branch {
+      background: var(--diagram-branch-fill);
+      border-color: var(--diagram-branch-stroke);
+    }
 
     .note ul {
       margin: 0.5rem 0 0;
@@ -776,12 +780,294 @@
 
       <section id="document-flow" aria-labelledby="document-flow-heading">
         <h2 id="document-flow-heading">文档处理流程</h2>
-        <p>本节将展示文档上传、解析、向量化与检索流程，具体内容由后续任务补充。</p>
+        <p>
+          文档上传与知识检索链路如下：文件在 API 层完成 MIME、后缀与文件签名三重校验后接收（<code>202</code>）或拒绝（<code>422</code>）；
+          接收文件经本地文本提取、分块、BGE 向量化写入 Chroma，检索阶段融合关键词与向量命中，由知识润色模块受控回答。
+          MinerU 与 Qwen-VL 为规划中 / 受控接入能力，不在当前默认调用链上。
+        </p>
+
+        <figure class="figure">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 1000 700" role="img" aria-labelledby="doc-svg-title doc-svg-desc"
+>
+              <title id="doc-svg-title">文档处理流程</title>
+              <desc id="doc-svg-desc">文档经 MIME、后缀与文件签名三重校验后 202 接收或 422 拒绝；随后本地 PyMuPDF / python-docx 文本提取、分块、BGE 向量化、Chroma 存储，经关键词与向量检索后由知识润色模块受控回答；MinerU 与 Qwen-VL 为规划中 / 受控接入能力，不在当前默认调用链上。</desc>
+              <defs>
+                <marker id="doc-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-arrow)" />
+                </marker>
+              </defs>
+
+              <!-- 主链路：上传 -->
+              <rect class="d-chain" x="60" y="20" width="480" height="70" rx="10" />
+              <text class="d-title" x="300" y="44" text-anchor="middle">上传 PDF / DOCX</text>
+              <text class="d-sub" x="300" y="64" text-anchor="middle">POST /api/documents（单文件）</text>
+              <text class="d-sub" x="300" y="80" text-anchor="middle">POST /api/documents/batch（multipart · 默认最多 10 份）</text>
+
+              <line class="d-arrow" x1="300" y1="90" x2="300" y2="104" marker-end="url(#doc-arrow)" />
+
+              <!-- 主链路：校验 -->
+              <rect class="d-chain" x="60" y="104" width="480" height="66" rx="10" />
+              <text class="d-title" x="300" y="126" text-anchor="middle">校验：MIME / 后缀 / 文件签名</text>
+              <text class="d-sub" x="300" y="146" text-anchor="middle">只接受类型、后缀、签名一致的 PDF 与 DOCX</text>
+              <text class="d-sub" x="300" y="162" text-anchor="middle">DOCUMENT_BATCH_MAX_FILES 可设 1–20</text>
+
+              <!-- 分支：422 拒绝 -->
+              <line class="d-dashed" x1="540" y1="137" x2="620" y2="137" marker-end="url(#doc-arrow)" />
+              <rect class="d-branch" x="620" y="104" width="310" height="66" rx="8" />
+              <text class="d-title" x="775" y="126" text-anchor="middle">422 拒绝（校验失败）</text>
+              <text class="d-sub" x="775" y="146" text-anchor="middle">全部校验失败 → HTTP 422</text>
+              <text class="d-sub" x="775" y="162" text-anchor="middle">不回显文件名 / 路径 / 异常详情</text>
+
+              <line class="d-arrow" x1="300" y1="170" x2="300" y2="182" marker-end="url(#doc-arrow)" />
+
+              <!-- 主链路：202 接收 -->
+              <rect class="d-chain" x="60" y="182" width="480" height="78" rx="10" />
+              <text class="d-title" x="300" y="204" text-anchor="middle">202 接收</text>
+              <text class="d-sub" x="300" y="224" text-anchor="middle">单文件返回 DocumentRecord · 批处理逐项 accepted / rejected / unavailable</text>
+              <text class="d-sub" x="300" y="240" text-anchor="middle">任一被接受 → 202</text>
+              <text class="d-sub" x="300" y="256" text-anchor="middle">处理器 / 存储不可用且无接受项 → 503</text>
+
+              <line class="d-arrow" x1="300" y1="260" x2="300" y2="272" marker-end="url(#doc-arrow)" />
+
+              <!-- 主链路：本地文本提取 -->
+              <rect class="d-chain" x="60" y="272" width="480" height="70" rx="10" />
+              <text class="d-title" x="300" y="294" text-anchor="middle">本地文本提取</text>
+              <text class="d-sub" x="300" y="314" text-anchor="middle">PDF → PyMuPDF（可访问文本与基础结构）· DOCX → python-docx</text>
+              <text class="d-sub" x="300" y="330" text-anchor="middle">扫描件 OCR / 复杂版面 / 图表 / 表格需人工核验</text>
+
+              <!-- 规划中 / 受控接入：MinerU 与 Qwen-VL -->
+              <line class="d-dashed" x1="540" y1="300" x2="620" y2="290" marker-end="url(#doc-arrow)" />
+              <rect class="d-depend" x="620" y="258" width="310" height="56" rx="8" />
+              <text class="d-title" x="775" y="280" text-anchor="middle">MinerU · 规划中</text>
+              <text class="d-sub" x="775" y="300" text-anchor="middle">后续受控外发解析 · 当前链路不调用</text>
+
+              <line class="d-dashed" x1="540" y1="330" x2="620" y2="348" marker-end="url(#doc-arrow)" />
+              <rect class="d-depend" x="620" y="334" width="310" height="56" rx="8" />
+              <text class="d-title" x="775" y="356" text-anchor="middle">Qwen-VL · 受控接入</text>
+              <text class="d-sub" x="775" y="376" text-anchor="middle">仅图表 OCR · 不在默认调用链</text>
+
+              <line class="d-arrow" x1="300" y1="342" x2="300" y2="356" marker-end="url(#doc-arrow)" />
+
+              <!-- 主链路：分块 -->
+              <rect class="d-chain" x="60" y="356" width="480" height="46" rx="10" />
+              <text class="d-title" x="300" y="378" text-anchor="middle">分块（chunking）</text>
+
+              <line class="d-arrow" x1="300" y1="402" x2="300" y2="416" marker-end="url(#doc-arrow)" />
+
+              <!-- 主链路：BGE Embedding -->
+              <rect class="d-chain" x="60" y="416" width="480" height="54" rx="10" />
+              <text class="d-title" x="300" y="438" text-anchor="middle">BGE Embedding（本地向量化）</text>
+              <text class="d-sub" x="300" y="458" text-anchor="middle">本地模型 · BGE_MODEL_PATH</text>
+
+              <line class="d-arrow" x1="300" y1="470" x2="300" y2="484" marker-end="url(#doc-arrow)" />
+
+              <!-- 主链路：Chroma 存储 -->
+              <rect class="d-chain" x="60" y="484" width="480" height="50" rx="10" />
+              <text class="d-title" x="300" y="506" text-anchor="middle">Chroma 存储</text>
+              <text class="d-sub" x="300" y="524" text-anchor="middle">CHROMA_COLLECTION_NAME=travel_documents</text>
+
+              <line class="d-arrow" x1="300" y1="534" x2="300" y2="548" marker-end="url(#doc-arrow)" />
+
+              <!-- 主链路：关键词 / 向量检索 -->
+              <rect class="d-chain" x="60" y="548" width="480" height="54" rx="10" />
+              <text class="d-title" x="300" y="570" text-anchor="middle">关键词 / 向量检索</text>
+              <text class="d-sub" x="300" y="590" text-anchor="middle">keyword_search.py + Chroma 向量检索</text>
+
+              <line class="d-arrow" x1="300" y1="602" x2="300" y2="616" marker-end="url(#doc-arrow)" />
+
+              <!-- 主链路：受控知识润色 -->
+              <rect class="d-chain" x="60" y="616" width="480" height="60" rx="10" />
+              <text class="d-title" x="300" y="638" text-anchor="middle">受控知识润色</text>
+              <text class="d-sub" x="300" y="658" text-anchor="middle">knowledge_polish.py · 已实现组件</text>
+              <text class="d-sub" x="300" y="674" text-anchor="middle">尚未接入旅行主规划链路</text>
+            </svg>
+          </div>
+          <figcaption>图 3 · 文档处理与检索链路（MinerU / Qwen-VL 为规划中 / 受控接入）</figcaption>
+          <ul class="legend">
+            <li><span class="swatch swatch-chain" aria-hidden="true"></span>主处理链路（校验 → 提取 → 向量化 → 存储 → 检索润色）</li>
+            <li><span class="swatch swatch-depend" aria-hidden="true"></span>规划中 / 受控接入能力（MinerU · Qwen-VL）</li>
+            <li><span class="swatch swatch-branch" aria-hidden="true"></span>拒绝分支（422 · 不泄露内部细节）</li>
+          </ul>
+        </figure>
+
+        <div class="note" role="note">
+          <p><strong>文档处理关键约束：</strong></p>
+          <ul>
+            <li>接口：<code>POST /api/documents</code>（单文件，返回 <code>202</code> + <code>DocumentRecord</code>）；<code>POST /api/documents/batch</code>（multipart，重复 <code>files</code> 字段按顺序提交，默认最多 10 份，<code>DOCUMENT_BATCH_MAX_FILES</code> 可设 1—20）。</li>
+            <li>校验：只接受 MIME 类型与文件后缀一致、且文件签名有效的 <strong>PDF 与 DOCX</strong>；外层状态为任一文件被接受 → <code>202</code>，全部校验失败 → <code>422</code>，没有接受项且存在合法文件因处理器或存储不可用 → <code>503</code>。</li>
+            <li>批处理响应逐项（1-based <code>index</code>）：<code>accepted</code>（附 <code>DocumentRecord</code>）/ <code>rejected</code> / <code>unavailable</code>；<code>rejected</code> / <code>unavailable</code> 绝不回显不可信文件名、文件路径或异常详情。未通过文件不入库、不进后台队列。</li>
+            <li>提取：PDF 当前始终在本地由 PyMuPDF 提取可访问文本与基础结构，DOCX 用 <code>python-docx</code>；PyMuPDF 不能保证扫描件 OCR、复杂版面、图表或表格的完整还原，此类内容需人工核验。</li>
+            <li>向量化与存储：本地 BGE embedding 模型（<code>BGE_MODEL_PATH</code>）分块嵌入，写入 Chroma 集合（<code>CHROMA_COLLECTION_NAME=travel_documents</code>）。</li>
+            <li>检索与润色：关键词检索（<code>keyword_search.py</code>）与向量检索经 <code>knowledge_polish.py</code> 受控润色，经 <code>/api/documents/knowledge-search</code> 提供；这些是<strong>已实现组件</strong>，但<strong>尚未接入旅行主规划链路</strong>（<code>POST /api/travel-plans</code> 不调用它们）。</li>
+            <li>MinerU 为<strong>规划中 · 后续受控外发解析</strong>能力（当前处理链路不会调用它）；Qwen-VL 为<strong>受控接入</strong>能力，仅用于图表 OCR。两者均不在当前默认调用链上。</li>
+          </ul>
+        </div>
       </section>
 
       <section id="resilience" aria-labelledby="resilience-heading">
         <h2 id="resilience-heading">熔断与韧性</h2>
-        <p>本节将展示缓存、重试、熔断与恢复流程，具体内容由后续任务补充。</p>
+        <p>
+          外部服务访问统一由「缓存 → 重试 → 熔断」横切机制包裹：缓存命中直接返回 <code>data_status=cached</code>，
+          未命中才访问上游；仅连接错误、超时、HTTP 429 与 5xx 触发最多 3 次指数退避重试，业务参数错误不盲目重试；
+          连续失败达到阈值后熔断打开，打开期间拒绝上游调用，窗口结束允许探测，探测成功恢复、失败继续降级。
+        </p>
+
+        <figure class="figure">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 1000 880" role="img" aria-labelledby="res-svg-title res-svg-desc"
+>
+              <title id="res-svg-title">缓存、重试、熔断与恢复流程</title>
+              <desc id="res-svg-desc">缓存命中返回 cached；未命中访问上游，仅连接错误、超时、429、5xx 触发最多 3 次指数退避重试，业务参数错误不重试；连续失败达到阈值后熔断打开，打开期间拒绝上游调用并返回 degraded，窗口结束允许探测，探测成功恢复、失败继续降级。</desc>
+              <defs>
+                <marker id="res-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-arrow)" />
+                </marker>
+              </defs>
+
+              <!-- 请求进入 -->
+              <rect class="d-chain" x="50" y="20" width="470" height="50" rx="10" />
+              <text class="d-title" x="285" y="42" text-anchor="middle">请求进入外部 HTTP 客户端</text>
+              <text class="d-sub" x="285" y="60" text-anchor="middle">缓存 / 重试 / 熔断横切包裹</text>
+
+              <line class="d-arrow" x1="285" y1="70" x2="285" y2="86" marker-end="url(#res-arrow)" />
+
+              <!-- 缓存检查 -->
+              <rect class="d-chain" x="50" y="86" width="470" height="74" rx="10" />
+              <text class="d-title" x="285" y="108" text-anchor="middle">缓存检查</text>
+              <text class="d-sub" x="285" y="128" text-anchor="middle">进程内 TTL：天气 1800s · 地理编码 604800s</text>
+              <text class="d-sub" x="285" y="144" text-anchor="middle">驾车路线 900s · POI 3600s</text>
+
+              <!-- 分支：命中 -->
+              <line class="d-dashed" x1="520" y1="123" x2="630" y2="123" marker-end="url(#res-arrow)" />
+              <rect class="d-chain" x="630" y="86" width="300" height="62" rx="8" />
+              <text class="d-title" x="780" y="108" text-anchor="middle">返回 cached</text>
+              <text class="d-sub" x="780" y="128" text-anchor="middle">data_status=cached · 刷新 retrieved_at</text>
+
+              <line class="d-arrow" x1="285" y1="160" x2="285" y2="176" marker-end="url(#res-arrow)" />
+
+              <!-- 访问上游 -->
+              <rect class="d-chain" x="50" y="176" width="470" height="62" rx="10" />
+              <text class="d-title" x="285" y="198" text-anchor="middle">访问上游（和风 / 高德）</text>
+              <text class="d-sub" x="285" y="218" text-anchor="middle">连接 3s · 读 8s · 总 10s</text>
+
+              <!-- 分支：成功 -->
+              <line class="d-dashed" x1="520" y1="207" x2="630" y2="207" marker-end="url(#res-arrow)" />
+              <rect class="d-chain" x="630" y="176" width="300" height="62" rx="8" />
+              <text class="d-title" x="780" y="198" text-anchor="middle">返回 realtime</text>
+              <text class="d-sub" x="780" y="218" text-anchor="middle">data_status=realtime · 写 source_updated_at</text>
+
+              <line class="d-arrow" x1="285" y1="238" x2="285" y2="254" marker-end="url(#res-arrow)" />
+
+              <!-- 错误分类 -->
+              <rect class="d-chain" x="50" y="254" width="470" height="86" rx="10" />
+              <text class="d-title" x="285" y="276" text-anchor="middle">错误分类</text>
+              <text class="d-sub" x="285" y="296" text-anchor="middle">可重试：连接错误 / 超时 / HTTP 429 / HTTP 5xx</text>
+              <text class="d-sub" x="285" y="312" text-anchor="middle">不重试：业务参数错误 / 其他响应</text>
+              <text class="d-sub" x="285" y="328" text-anchor="middle">超时上限：连接 3s · 读 8s · 总 10s</text>
+
+              <!-- 分支：业务参数错误不重试 -->
+              <line class="d-dashed" x1="520" y1="300" x2="630" y2="300" marker-end="url(#res-arrow)" />
+              <rect class="d-branch" x="630" y="254" width="300" height="74" rx="8" />
+              <text class="d-title" x="780" y="276" text-anchor="middle">返回 failed（受控）</text>
+              <text class="d-sub" x="780" y="296" text-anchor="middle">业务参数错误不盲目重试</text>
+              <text class="d-sub" x="780" y="312" text-anchor="middle">不泄露内部细节</text>
+
+              <line class="d-arrow" x1="285" y1="340" x2="285" y2="356" marker-end="url(#res-arrow)" />
+
+              <!-- 指数退避重试 -->
+              <rect class="d-chain" x="50" y="356" width="470" height="58" rx="10" />
+              <text class="d-title" x="285" y="378" text-anchor="middle">指数退避重试（最多 3 次）</text>
+              <text class="d-sub" x="285" y="398" text-anchor="middle">EXTERNAL_MAX_ATTEMPTS=3 · 退避间隔递增</text>
+
+              <!-- 分支：重试成功 -->
+              <line class="d-dashed" x1="520" y1="385" x2="630" y2="385" marker-end="url(#res-arrow)" />
+              <rect class="d-chain" x="630" y="360" width="300" height="50" rx="8" />
+              <text class="d-title" x="780" y="382" text-anchor="middle">重试成功</text>
+              <text class="d-sub" x="780" y="400" text-anchor="middle">data_status=realtime</text>
+
+              <line class="d-arrow" x1="285" y1="414" x2="285" y2="430" marker-end="url(#res-arrow)" />
+
+              <!-- 连续失败计数 -->
+              <rect class="d-chain" x="50" y="430" width="470" height="46" rx="10" />
+              <text class="d-title" x="285" y="452" text-anchor="middle">连续失败计数 +1</text>
+
+              <line class="d-arrow" x1="285" y1="476" x2="285" y2="492" marker-end="url(#res-arrow)" />
+
+              <!-- 熔断判断 -->
+              <rect class="d-chain" x="50" y="492" width="470" height="62" rx="10" />
+              <text class="d-title" x="285" y="514" text-anchor="middle">熔断判断</text>
+              <text class="d-sub" x="285" y="534" text-anchor="middle">连续失败 ≥ CIRCUIT_BREAKER_FAILURE_THRESHOLD=3</text>
+
+              <!-- 分支：未达阈值 -->
+              <line class="d-dashed" x1="520" y1="523" x2="630" y2="523" marker-end="url(#res-arrow)" />
+              <rect class="d-branch" x="630" y="492" width="300" height="62" rx="8" />
+              <text class="d-title" x="780" y="514" text-anchor="middle">返回 degraded（本请求降级）</text>
+              <text class="d-sub" x="780" y="534" text-anchor="middle">data_status=degraded · 失败计数保留</text>
+
+              <line class="d-arrow" x1="285" y1="554" x2="285" y2="576" marker-end="url(#res-arrow)" />
+
+              <!-- 熔断状态机容器 -->
+              <rect class="d-container" x="50" y="576" width="880" height="250" rx="14" />
+              <text class="d-title" x="70" y="600" text-anchor="start">进程内熔断状态机（进程内熔断 · 非分布式流量治理）</text>
+
+              <!-- OPEN -->
+              <rect class="d-branch" x="70" y="616" width="230" height="82" rx="8" />
+              <text class="d-title" x="185" y="642" text-anchor="middle">熔断打开（OPEN）</text>
+              <text class="d-sub" x="185" y="664" text-anchor="middle">打开期间拒绝上游调用</text>
+              <text class="d-sub" x="185" y="682" text-anchor="middle">CIRCUIT_BREAKER_OPEN_SECONDS=60</text>
+
+              <line class="d-arrow" x1="300" y1="657" x2="340" y2="657" marker-end="url(#res-arrow)" />
+              <text class="d-note" x="320" y="648" text-anchor="middle">窗口结束</text>
+
+              <!-- HALF-OPEN -->
+              <rect class="d-chain" x="340" y="616" width="250" height="82" rx="8" />
+              <text class="d-title" x="465" y="642" text-anchor="middle">允许探测（HALF-OPEN）</text>
+              <text class="d-sub" x="465" y="664" text-anchor="middle">窗口结束仅放行探测请求</text>
+              <text class="d-sub" x="465" y="682" text-anchor="middle">探测失败 → 重新打开</text>
+
+              <line class="d-arrow" x1="590" y1="657" x2="630" y2="657" marker-end="url(#res-arrow)" />
+              <text class="d-note" x="610" y="648" text-anchor="middle">探测成功</text>
+
+              <!-- CLOSED -->
+              <rect class="d-chain" x="630" y="616" width="260" height="82" rx="8" />
+              <text class="d-title" x="760" y="642" text-anchor="middle">恢复关闭（CLOSED）</text>
+              <text class="d-sub" x="760" y="664" text-anchor="middle">连续失败计数清零</text>
+              <text class="d-sub" x="760" y="682" text-anchor="middle">后续请求返回 realtime</text>
+
+              <!-- 打开期间降级 -->
+              <line class="d-dashed" x1="185" y1="698" x2="185" y2="726" marker-end="url(#res-arrow)" />
+              <rect class="d-branch" x="70" y="726" width="330" height="46" rx="8" />
+              <text class="d-sub" x="235" y="748" text-anchor="middle">打开期间请求 → 返回 degraded · 不访问上游</text>
+
+              <!-- 探测失败降级 -->
+              <line class="d-dashed" x1="465" y1="698" x2="465" y2="726" marker-end="url(#res-arrow)" />
+              <rect class="d-branch" x="420" y="726" width="330" height="46" rx="8" />
+              <text class="d-sub" x="585" y="748" text-anchor="middle">探测失败 → 继续降级 · 保持打开状态</text>
+
+              <!-- Agent 异常说明 -->
+              <text class="d-note" x="70" y="800" text-anchor="start">Agent 异常 → 受控 failed（含 missing_fields 与受控 error 摘要）· 其余 Agent 继续 · 汇总器保留其余可用信息</text>
+            </svg>
+          </div>
+          <figcaption>图 4 · 缓存、重试、熔断与恢复流程（进程内熔断）</figcaption>
+          <ul class="legend">
+            <li><span class="swatch swatch-chain" aria-hidden="true"></span>主判断链路与正常返回（缓存 / 上游 / 重试 / cached / realtime）</li>
+            <li><span class="swatch swatch-branch" aria-hidden="true"></span>失败与降级分支（failed / degraded / 熔断打开 / 拒绝）</li>
+          </ul>
+        </figure>
+
+        <div class="note" role="note">
+          <p><strong>韧性关键约束：</strong></p>
+          <ul>
+            <li>缓存：进程内 TTL 内存缓存，按来源设置 TTL（天气 1800s · 地理编码 604800s · 驾车路线 900s · POI 3600s）。命中返回 <code>data_status=cached</code> 并刷新 <code>retrieved_at</code>；首次上游请求返回 <code>data_status=realtime</code>；供应商真实更新时间才写 <code>source_updated_at</code>。</li>
+            <li>重试：仅对连接错误、超时、HTTP 429、HTTP 5xx 做最多 3 次（<code>EXTERNAL_MAX_ATTEMPTS=3</code>）指数退避重试；业务参数错误和其他响应不盲目重试。超时：连接 3s、读 8s、总 10s。</li>
+            <li>熔断：连续失败达到 <code>CIRCUIT_BREAKER_FAILURE_THRESHOLD=3</code> 后打开，保持 <code>CIRCUIT_BREAKER_OPEN_SECONDS=60</code>；打开期间不访问上游，窗口结束允许探测请求，探测成功恢复、失败继续降级。<strong>这是进程内熔断，不是分布式流量治理。</strong></li>
+            <li>Agent 异常：单个 Agent 异常转为受控 <code>failed</code> 结果（含 <code>missing_fields</code> 与受控 <code>error</code> 摘要），其余 Agent 继续，汇总器保留其余可用信息，顶层状态反映失败。</li>
+            <li>状态语义：<code>data_status</code> 有 <code>realtime</code> / <code>cached</code> / <code>degraded</code>。</li>
+          </ul>
+        </div>
       </section>
 
       <section id="status-contract" aria-labelledby="status-contract-heading">
