@@ -313,6 +313,55 @@
       margin-top: 0.25rem;
     }
 
+    /* ===== 主题切换按钮 ===== */
+    .theme-toggle {
+      display: inline-block;
+      margin: 0 0 0.75rem;
+      padding: 0.35rem 0.7rem;
+      font: inherit;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      color: var(--color-text);
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 0.375rem;
+      cursor: pointer;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    .theme-toggle:hover {
+      background: var(--color-code-bg);
+    }
+
+    /* ===== 状态合同判断矩阵 ===== */
+    .contract-scroll {
+      overflow-x: auto;
+      margin: 1.25rem 0;
+      border: 1px solid var(--color-border);
+      border-radius: 0.75rem;
+      background: var(--color-surface);
+    }
+    .contract-table {
+      width: 100%;
+      min-width: 680px;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    .contract-table th,
+    .contract-table td {
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--color-border);
+      vertical-align: top;
+    }
+    .contract-table thead th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+      color: var(--color-text);
+    }
+    .contract-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
     /* ===== SVG 图表主题变量（浅色默认，深色覆盖） ===== */
     :root {
       --diagram-chain-fill: #e8f1fd;
@@ -436,6 +485,7 @@
   <div class="layout">
     <nav class="sidebar" aria-label="页面目录">
       <h2>目录</h2>
+      <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false">切换主题</button>
       <ul>
         <li><a href="#overview">项目总览</a></li>
         <li><a href="#architecture">总体架构</a></li>
@@ -1072,12 +1122,123 @@
 
       <section id="status-contract" aria-labelledby="status-contract-heading">
         <h2 id="status-contract-heading">状态合同</h2>
-        <p>本节将展示状态判断矩阵与顶层状态规则，具体内容由后续任务补充。</p>
+        <p>
+          专业 Agent 结果信封 <code>AgentResult</code> 的状态只有四种：<code>success</code>、<code>partial</code>、<code>degraded</code>、<code>failed</code>。
+          判断矩阵规定每种状态对 <code>data</code>、<code>missing_fields</code> 与 <code>error</code> 的合同要求。
+        </p>
+
+        <div class="contract-scroll">
+          <table class="contract-table">
+            <thead>
+              <tr>
+                <th>状态</th>
+                <th><code>data</code></th>
+                <th><code>missing_fields</code></th>
+                <th><code>error</code></th>
+                <th>含义与合同要求</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>success</code></td>
+                <td>有完整 <code>data</code></td>
+                <td>不允许</td>
+                <td>不允许</td>
+                <td>专业结果完整，可直接使用。</td>
+              </tr>
+              <tr>
+                <td><code>partial</code></td>
+                <td>有部分 <code>data</code></td>
+                <td>必须列出缺失字段</td>
+                <td>不允许</td>
+                <td>部分字段可用，缺失部分明确声明，等待后续补齐。</td>
+              </tr>
+              <tr>
+                <td><code>degraded</code></td>
+                <td>仍有可用 <code>data</code></td>
+                <td>必须说明缺失字段或受控错误</td>
+                <td>可有受控错误</td>
+                <td>功能降级但仍有产出，例如保留区域建议但没有精确路线。</td>
+              </tr>
+              <tr>
+                <td><code>failed</code></td>
+                <td>必须为空</td>
+                <td>必须有</td>
+                <td>必须有受控错误摘要</td>
+                <td>专业 Agent 执行失败，只保留缺失字段与受控 <code>error</code> 信息。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note" role="note">
+          <p><strong>顶层状态规则：</strong></p>
+          <ul>
+            <li>顶层文档 <code>status</code> 只使用 <code>success</code>、<code>degraded</code> 或 <code>failed</code>，<strong>禁止把 <code>partial</code> 直接当作顶层状态</strong>。</li>
+            <li>存在任意 <code>failed</code> 专业结果 → 顶层为 <code>failed</code>。</li>
+            <li>存在 <code>partial</code> 或 <code>degraded</code> 专业结果 → 顶层为 <code>degraded</code>。</li>
+            <li>全部专业结果均为 <code>success</code> → 顶层为 <code>success</code>。</li>
+          </ul>
+        </div>
+
+        <div class="note" role="note">
+          <p><strong>来源时间语义：</strong></p>
+          <ul>
+            <li><code>retrieved_at</code>：本次获取 / 缓存读取时间。</li>
+            <li><code>source_updated_at</code>：上游真实更新时间；上游未提供时为 <code>null</code>，不能用 <code>retrieved_at</code> 伪造。</li>
+            <li><code>data_status</code>：<code>realtime</code> / <code>cached</code> / <code>degraded</code>。</li>
+          </ul>
+        </div>
       </section>
 
       <section id="security" aria-labelledby="security-heading">
         <h2 id="security-heading">安全与限制</h2>
-        <p>本节将展示安全边界与当前限制说明，具体内容由后续任务补充。</p>
+        <p>
+          本节区分「已实现的安全边界」「当前未实现的生产化能力」与「已知 MVP 限制」：规划中 / 缺口能力
+          一律明确标注，不写成已实现。
+        </p>
+
+        <div class="cards">
+          <article class="card">
+            <h3>密钥与访问边界</h3>
+            <p>服务端密钥只从后端环境变量读取，浏览器只访问同源相对路径；CORS 仅允许配置的同源来源，客户端不得覆盖供应商 <code>*_BASE_URL</code>。</p>
+          </article>
+          <article class="card">
+            <h3>固定供应商域名</h3>
+            <p>和风天气、高德地图使用固定域名（<code>*_BASE_URL</code>），不允许客户端改写目标地址，防止被引导到任意端点。</p>
+          </article>
+          <article class="card">
+            <h3>响应与日志脱敏</h3>
+            <p>响应和日志不得写入 API Key、Token、Cookie、Authorization、堆栈、内部 URL 或供应商原始响应；API 返回通用错误，不泄露异常详情、请求参数和供应商响应体。</p>
+          </article>
+          <article class="card">
+            <h3>领域合同拒绝交易字段</h3>
+            <p>领域合同拒绝 <code>price</code>、<code>live_price</code>、<code>inventory</code>、<code>availability</code>、<code>bookable</code>、<code>queue</code>、<code>queue_time</code>、<code>discount</code>、<code>rating</code>、<code>review_score</code>、<code>order_url</code> 及其同义扩展；系统只给候选位置、区域、设施、菜系、偏好筛选和核验提示。</p>
+          </article>
+          <article class="card">
+            <h3>前端 XSS 防护</h3>
+            <p>Markdown 先由 <code>marked.parse</code> 转换，再由 <code>DOMPurify.sanitize</code> 净化；<code>FORBID_TAGS</code> 禁止 <code>script</code> / <code>style</code> / <code>svg</code> / <code>math</code> 标签，<code>FORBID_ATTR</code> 禁止 <code>on*</code> 事件属性；列表和错误文字用 <code>textContent</code> / <code>replaceChildren</code>，不把 API JSON 序列化为页面原文。本地 vendor 依赖带 SHA-256 校验（<code>marked</code> 15.0.12、<code>DOMPurify</code> 3.2.6）。</p>
+          </article>
+        </div>
+
+        <div class="note" role="note">
+          <p><strong>当前未实现的生产化能力（规划中 / 缺口，非已实现）：</strong></p>
+          <ul>
+            <li>认证、限流、租户隔离、配额控制、集中式密钥管理。</li>
+            <li>结构化审计日志、密钥轮换、供应商调用指标、脱敏追踪、告警。</li>
+            <li>single-flight（防缓存未命中并发击穿）、可观测异步连接池、有界可观测缓存淘汰、统一请求级 deadline 预算。</li>
+          </ul>
+        </div>
+
+        <div class="note" role="note">
+          <p><strong>已知 MVP 限制：</strong></p>
+          <ul>
+            <li>和风天气 15 日窗口之外日期可能无匹配逐日预报。</li>
+            <li>多日外部调用按顺序执行，暂无 Route 总 deadline。</li>
+            <li>附近 POI 仅检查坐标字符串非空，未做本地经纬度格式校验。</li>
+            <li>进程内缓存 / 熔断，不是分布式缓存或全局流量治理。</li>
+          </ul>
+        </div>
       </section>
     </main>
   </div>
@@ -1085,6 +1246,62 @@
   <footer class="site-footer">
     <p>本页面为离线自包含 HTML，不加载外部资源；事实来源为仓库当前代码与 README。</p>
   </footer>
+
+  <script>
+    // 主题切换与持久化：仅修改 documentElement.dataset.theme，不发起网络请求、
+    // 不拼接不可信 HTML；任何异常静默降级，不影响正文阅读。
+    (function () {
+      'use strict';
+      try {
+        var root = document.documentElement;
+        var toggleBtn = document.getElementById('theme-toggle');
+        var STORAGE_KEY = 'arch-theme';
+
+        function systemPrefersDark() {
+          return window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches;
+        }
+
+        // theme 取 'light' / 'dark' / null；null 表示清除强制值、跟随系统偏好
+        function applyTheme(theme) {
+          if (theme === 'light' || theme === 'dark') {
+            root.dataset.theme = theme;
+          } else {
+            delete root.dataset.theme;
+          }
+          if (toggleBtn) {
+            var isDark = theme === 'dark' || (theme !== 'light' && systemPrefersDark());
+            toggleBtn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+            toggleBtn.textContent = isDark ? '切换浅色模式' : '切换深色模式';
+          }
+        }
+
+        var saved = null;
+        try {
+          saved = localStorage.getItem(STORAGE_KEY);
+        } catch (e) {
+          saved = null; // 存储不可用时退回跟随系统
+        }
+        applyTheme(saved);
+
+        if (toggleBtn) {
+          toggleBtn.addEventListener('click', function () {
+            var currentIsDark = root.dataset.theme === 'dark' ||
+              (root.dataset.theme !== 'light' && systemPrefersDark());
+            var next = currentIsDark ? 'light' : 'dark';
+            applyTheme(next);
+            try {
+              localStorage.setItem(STORAGE_KEY, next);
+            } catch (e) {
+              // 存储不可用（如隐私模式）时仅当前会话生效
+            }
+          });
+        }
+      } catch (e) {
+        // 脚本失败不影响正文阅读
+      }
+    })();
+  </script>
 
 </body>
 </html>
