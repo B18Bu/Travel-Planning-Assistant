@@ -31,3 +31,14 @@ def test_frontend_renders_flyai_text_summary_without_inner_html():
     start = script.index("function renderTicketResults")
     block = script[start:start + 3500]
     assert "innerHTML" not in block
+
+
+def test_show_view_declares_hotel_nav_before_using_it():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    # showView 在引用 hotel 前必须声明 nav-hotel，否则 ReferenceError 会中断
+    # loadFliggyStatus，导致门票视图按钮保持禁用、点击无响应。
+    start = script.index("function showView")
+    block = script[start:start + 2000]
+    assert 'const hotel = document.getElementById("nav-hotel")' in block
+    assert "if (hotel)" in block

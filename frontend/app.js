@@ -663,6 +663,7 @@
     const plan = document.getElementById("nav-plan");
     const guide = document.getElementById("nav-guide");
     const ticket = document.getElementById("nav-ticket");
+    const hotel = document.getElementById("nav-hotel");
     if (dashboard) dashboard.classList.toggle("active", name === "dashboard");
     if (library) library.classList.toggle("active", name === "library");
     if (plan) plan.classList.toggle("active", name === "plan");
