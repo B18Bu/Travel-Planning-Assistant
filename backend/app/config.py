@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,6 +18,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     fliggy_enabled: bool = False
     fliggy_mock_enabled: bool = False
+    fliggy_ticket_provider: Literal["disabled", "mock", "flyai"] = "disabled"
+    flyai_api_key: str = ""
+    flyai_timeout_seconds: int = Field(default=30, ge=1, le=120)
     allowed_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173"]
     )
