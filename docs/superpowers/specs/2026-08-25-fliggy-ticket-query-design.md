@@ -10,12 +10,13 @@
 
 官方门票 API 能力更匹配景区商品查询：
 
-- [门票 API 类目](https://open.alitrip.com/docs/api_list.htm?cid=20722)；
-- [`alitrip.ticket.scenic.query`](https://open.alitrip.com/docs/api.htm?apiId=27941)：查询卖家已发布的景点门票商品；
-- [`alitrip.ticket.product.query`](https://open.alitrip.com/docs/api.htm?apiId=27945)：查询商品、票种、日期价格/库存、有效期和发码方式；
-- [`alitrip.ticket.rule.query`](https://open.alitrip.com/docs/api.htm?apiId=27942)：查询退改、入园、换票、游客信息和限购规则。
+- [度假－商品管理 API 类目](https://open.alitrip.com/docs/api_list.htm?cid=20751)；
+- [`taobao.alitrip.travel.baseinfo.scenics.get`](https://open.alitrip.com/docs/api.htm?apiId=25781)：按城市和景点关键词查询景点及其门票套餐；
+- [`taobao.alitrip.travel.item.single.query`](https://open.alitrip.com/docs/api.htm?apiId=25767)：按商品 ID 查询商品、票种、日期价格/库存和商品规则。
 
-这些 API 需要应用授权和卖家/商品范围确认。`scenic.query` 只能查到已发布商品的景点，不是全网景点搜索；`product.query` 的官方请求字段不包含游客人数，因此游客人数只在本地校验和结果上下文中使用，不发送给飞猪。
+这两个接口的官方定位是度假/门票商品发布和查询辅助，均需要授权。它们能支撑已接入商品的查询，但不等同于全网景点搜索，也不提供订单创建、支付或核销。
+
+这两个 API 需要应用授权和卖家/商品范围确认。`baseinfo.scenics.get` 返回已接入的景点及 `spuList`，不是全网景点搜索；`item.single.query` 的官方请求字段不包含游客人数，因此游客人数只在本地校验和结果上下文中使用，不发送给飞猪。
 
 ## 2. 产品范围
 
@@ -65,12 +66,10 @@ POST /api/fliggy/tickets/search
   │ 服务端校验 + request_id
   ▼
 FliggyTicketService
-  ├─ alitrip.ticket.scenic.query
-  │    景点 → 已发布门票商品
-  ├─ alitrip.ticket.product.query
-  │    商品 → 票种、指定日期价格/库存
-  └─ alitrip.ticket.rule.query
-       规则 → 退改、入园、游客信息、限购
+  ├─ taobao.alitrip.travel.baseinfo.scenics.get
+  │    景点关键词 → 景点及门票套餐 SPU
+  └─ taobao.alitrip.travel.item.single.query
+       商品 ID → 票种、指定日期价格/库存和商品规则
   ▼
 白名单字段映射 + 状态归一化
   ▼
@@ -179,11 +178,11 @@ FliggyTicketService
 
 - 请求字段、日期和人数边界校验；
 - 游客人数不进入飞猪请求参数；
-- `scenic.query` 多商品全部保留；
-- `product.query` 只选择与 `entry_date` 匹配的 `date_inventorys`；
+- `baseinfo.scenics.get` 返回的多个 `spu` 全部保留；
+- `item.single.query` 只选择与 `entry_date` 匹配的 `prices`；
 - 价格单位精确到分，并明确币种；
 - `stock = 0`、库存缺失和库存异常分别处理；
-- `rule.query` 的游客信息要求、限购、退改和入园字段映射；
+- `item.single.query` 返回的预订规则、景点信息和游客要求按白名单映射；
 - 景点无商品时跳过后续调用；
 - 单商品失败与全部失败分别降级；
 - 超时、`429`、`5xx`、鉴权失败不泄露上游数据；
@@ -216,7 +215,7 @@ git diff --check
 真实门票查询启用前必须完成：
 
 1. 飞猪应用授权、卖家/渠道范围与 `session` 获取方式确认；
-2. `scenic.query`、`product.query`、`rule.query` 的正式字段和错误码登记；
+2. `baseinfo.scenics.get`、`item.single.query` 的正式字段和错误码登记；
 3. 价格、库存、图片、规则和游客信息要求的书面展示许可；
 4. 正式环境/测试环境、限流、超时、重试和缓存限制确认；
 5. 真实凭据只配置在后端受控环境；

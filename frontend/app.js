@@ -429,20 +429,34 @@
     tickets.forEach((ticket) => {
       const card = document.createElement("article");
       card.className = "fliggy-ticket-card";
+      const imageUrls = Array.isArray(ticket.image_urls) ? ticket.image_urls : [];
+      if (imageUrls.length && payload.image_display_allowed === true) {
+        const image = document.createElement("img");
+        image.src = imageUrls[0];
+        image.alt = ticket.item_name || "门票商品图片";
+        image.loading = "lazy";
+        card.appendChild(image);
+      }
       const title = document.createElement("h3");
       title.textContent = ticket.item_name || "未命名门票商品";
       const meta = document.createElement("p");
       meta.textContent = [ticket.ticket_type, ticket.entry_date, ticket.entry_type].filter(Boolean).join(" · ");
-      card.append(title, meta);
+      const price = document.createElement("p");
+      price.textContent = ticket.price_amount === undefined ? "价格信息暂不可用" : `价格：${(Number(ticket.price_amount) / 100).toFixed(2)} ${ticket.currency || "CNY"}`;
+      const stock = document.createElement("p");
+      stock.textContent = ticket.stock_status === "empty" ? "库存为 0" : ticket.stock_status === "unknown" ? "库存信息暂不可用" : `库存：${ticket.stock ?? "信息暂不可用"}`;
+      card.append(title, meta, price, stock);
       const note = document.createElement("p");
-      note.textContent = "价格和库存仅代表查询时刻，不代表最终可售或预订成功。";
+      note.textContent = payload.data_status === "mock" ? "当前为演示数据，不代表飞猪实时价格、库存或可售状态。" : "价格和库存仅代表查询时刻，不代表最终可售或预订成功。";
       card.appendChild(note);
       ticketResults.appendChild(card);
     });
-    const warning = document.createElement("p");
-    warning.className = "fliggy-notice";
-    warning.textContent = "本系统仅提供门票信息查询，请通过飞猪官方渠道完成购买。";
-    ticketResults.appendChild(warning);
+    (Array.isArray(payload.warnings) ? payload.warnings : ["本系统仅提供门票信息查询，请通过飞猪官方渠道完成购买。"]).forEach((text) => {
+      const warning = document.createElement("p");
+      warning.className = "fliggy-notice";
+      warning.textContent = text;
+      ticketResults.appendChild(warning);
+    });
     ticketResults.hidden = false;
   }
 

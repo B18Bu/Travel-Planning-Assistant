@@ -4,17 +4,16 @@
 
 **目标：** 将工作台“车票查询”改为默认关闭的“门票查询”，并在授权和测试条件满足后，通过飞猪门票 API 查询景点商品、指定日期价格/库存与入园规则。
 
-**架构：** 前端沿用现有 `showView()` 内部视图，门票页面提交景点关键词、入园日期和游客人数。后端新增严格的门票请求/响应模型与 `/api/fliggy/tickets/search`，服务内部按 `scenic.query → product.query → rule.query` 顺序调用飞猪 TOP Router；默认注入关闭实现，真实适配器只在服务端开关、授权和字段许可均满足时启用。
+**架构：** 前端沿用现有 `showView()` 内部视图，门票页面提交景点关键词、入园日期和游客人数。后端新增严格的门票请求/响应模型与 `/api/fliggy/tickets/search`，服务内部按 `baseinfo.scenics.get → item.single.query` 顺序调用飞猪 TOP Router；默认注入关闭实现，真实适配器只在服务端开关、授权和字段许可均满足时启用。
 
 **技术栈：** Python 3.12、FastAPI、Pydantic v2、pytest、现有 HTTP 客户端/韧性工具、原生 HTML/CSS/JavaScript、`fetch`、安全 DOM API。
 
 **官方依据：**
 
 - [门票 API 类目](https://open.alitrip.com/docs/api_list.htm?cid=20722)
-- [`alitrip.ticket.scenic.query`](https://open.alitrip.com/docs/api.htm?apiId=27941)
-- [`alitrip.ticket.product.query`](https://open.alitrip.com/docs/api.htm?apiId=27945)
-- [`alitrip.ticket.rule.query`](https://open.alitrip.com/docs/api.htm?apiId=27942)
-- [淘宝开放平台 API 公共调用参数说明（见各 API 详情页）](https://open.alitrip.com/docs/api.htm?apiId=27945)
+- [`taobao.alitrip.travel.baseinfo.scenics.get`](https://open.alitrip.com/docs/api.htm?apiId=25781)
+- [`taobao.alitrip.travel.item.single.query`](https://open.alitrip.com/docs/api.htm?apiId=25767)
+- [淘宝开放平台 API 公共调用参数说明（见各 API 详情页）](https://open.alitrip.com/docs/api.htm?apiId=25767)
 
 ---
 
@@ -29,7 +28,7 @@
 只有在以下资料完成并记录到 `docs/superpowers/specs/2026-08-24-fliggy-api-integration-registry.md` 后，才能执行真实适配器任务：
 
 - 应用授权主体、卖家/渠道范围和 `session` 获取方式；
-- `scenic.query`、`product.query`、`rule.query` 字段、错误码和展示许可；
+- `baseinfo.scenics.get`、`item.single.query` 字段、错误码和展示许可；
 - 正式/测试环境、`app_key`、签名密钥保存位置和限流规则；
 - 价格、库存、图片、游客信息要求和规则文本的展示许可；
 - 沙箱契约样例、安全评审和发布批准。
@@ -466,7 +465,7 @@ README 必须说明：
 - 不收集游客身份信息；
 - 真实启用必须完成飞猪授权、展示许可、沙箱测试和安全评审。
 
-登记表新增官方门票 API 记录：`27941`、`27945`、`27942`，并记录“景点查询只能返回卖家已发布商品”“product.query 不包含游客人数参数”“价格精确到分”“库存来自日期库存字段”等事实。
+登记表新增官方门票 API 记录：`25781`、`25767`，并记录“景点查询返回景点及 `spuList`”“item.single.query 不包含游客人数参数”“价格精确到分”“库存来自商品 SKU 的日期价格库存字段”等事实。
 
 - [ ] **步骤 4：运行回归测试**
 
@@ -565,9 +564,8 @@ def test_ticket_service_queries_scenic_then_product_then_rule(http_mock) -> None
     )
 
     assert http_mock.methods == [
-        "alitrip.ticket.scenic.query",
-        "alitrip.ticket.product.query",
-        "alitrip.ticket.rule.query",
+        "taobao.alitrip.travel.baseinfo.scenics.get",
+        "taobao.alitrip.travel.item.single.query",
     ]
     assert http_mock.requests[1]["visitor_count"] is None
     assert result.data_status == "realtime"
@@ -600,9 +598,9 @@ class FliggyTicketService:
 
 1. 统一使用官方 TOP Router HTTPS 地址；
 2. 后端固定 `method`、`v=2.0`、JSON、时间戳和签名；
-3. `scenic.query` 根据关键词匹配已发布景点商品；
-4. `product.query` 只使用适配器得到的 `ali_product_id`、`out_product_id` 或 `item_id`；
-5. `rule.query` 只使用商品关联的 `out_rule_id`；
+3. `baseinfo.scenics.get` 根据关键词匹配已发布景点商品；
+4. `item.single.query` 只使用适配器得到的 `ali_product_id`、`out_product_id` 或 `item_id`；
+5. 商品规则字段 只使用商品关联的 `out_rule_id`；
 6. 绝不把 `visitor_count` 添加到飞猪请求；
 7. 每次查询重新请求日期价格/库存，不读取实时字段缓存；
 8. 只映射白名单字段，丢弃原始响应、签名、session、订单和个人信息；

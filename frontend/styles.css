@@ -164,6 +164,7 @@
   .fliggy-status { min-height: 1.5em; color: var(--text-dim); }
   .fliggy-results { margin-top: 24px; display: grid; gap: 14px; }
   .fliggy-ticket-card { padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+  .fliggy-ticket-card img { display: block; width: 100%; max-height: 220px; object-fit: cover; border-radius: 12px; margin-bottom: 12px; }
   .fliggy-ticket-card h3 { margin: 0 0 8px; }
   .fliggy-ticket-card p { margin: 6px 0 0; color: var(--text-dim); line-height: 1.7; }
   .fliggy-notice { color: var(--text-dim); font-size: 13px; line-height: 1.7; }

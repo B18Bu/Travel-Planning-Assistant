@@ -17,7 +17,7 @@ from app.services.chroma_store import ChromaStore
 from app.services.deepseek import DeepSeekClient
 from app.services.document_processor import DocumentProcessor
 from app.services.document_store import DocumentStore
-from app.services.fliggy import DisabledFliggyTicketService
+from app.services.fliggy import DisabledFliggyTicketService, MockFliggyTicketService
 from app.services.embeddings import LocalBgeEmbedder
 from app.services.knowledge_polish import KnowledgePolisher
 from app.services.mineru import MinerUClient
@@ -43,6 +43,7 @@ def create_app(
     document_store=None,
     document_processor=None,
     chroma_store=None,
+    fliggy_ticket_service=None,
 ) -> FastAPI:
     """创建 v1 后端应用。"""
 
@@ -72,7 +73,9 @@ def create_app(
             app.state.chroma_store,
         )
     app.state.query_record_store = QueryRecordStore(app.state.document_store.data_dir)
-    app.state.fliggy_ticket_service = DisabledFliggyTicketService()
+    app.state.fliggy_ticket_service = fliggy_ticket_service or (
+        MockFliggyTicketService() if settings.fliggy_mock_enabled else DisabledFliggyTicketService()
+    )
     app.state.knowledge_polisher = KnowledgePolisher(
         DeepSeekClient(
             settings.deepseek_api_key,

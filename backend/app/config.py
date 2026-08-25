@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     fliggy_enabled: bool = False
+    fliggy_mock_enabled: bool = False
     allowed_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173"]
     )

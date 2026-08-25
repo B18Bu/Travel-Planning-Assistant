@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -27,3 +28,39 @@ class FliggyServiceStatus(BaseModel):
 
     available: bool
     message: str
+
+
+class TicketProduct(BaseModel):
+    """门票商品的安全展示字段。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str
+    item_name: str
+    ticket_type: str
+    entry_date: date
+    price_amount: int
+    currency: str = "CNY"
+    price_unit: str = "分"
+    stock: int | None
+    stock_status: Literal["available", "empty", "unknown"]
+    entry_type: str
+    entry_address: str
+    refund_description: str
+    visitor_requirement: str
+    purchase_limit: str
+    image_urls: tuple[str, ...] = ()
+
+
+class TicketSearchResponse(BaseModel):
+    """门票查询规范化响应。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_name: str
+    retrieved_at: str
+    data_status: Literal["mock", "realtime", "degraded"]
+    scenic_keyword: str
+    visitor_count: int
+    tickets: tuple[TicketProduct, ...] = ()
+    warnings: tuple[str, ...] = ()

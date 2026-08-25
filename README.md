@@ -44,7 +44,7 @@
 - 天气 Agent、路线 Agent、住宿 Agent、餐饮 Agent、汇总 Agent 和顺序编排器。
 - 和风天气与高德地图的受控 HTTP 客户端，以及进程内缓存、瞬时错误重试和熔断。
 - `/api/health`、`/api/ready`、`/api/travel-plans` 和默认关闭的 `/api/fliggy/tickets/search`。
-- 工作台保留“门票查询”入口；当前只展示筹备状态，不请求飞猪、不显示模拟价格或库存。
+- 工作台保留“门票查询”入口；默认只展示筹备状态，不请求飞猪、不显示模拟价格或库存。配置 `FLIGGY_MOCK_ENABLED=true` 时可开启明确标注的本地演示数据；该模式不访问飞猪。
 
 ### 非目标与明确不接入
 

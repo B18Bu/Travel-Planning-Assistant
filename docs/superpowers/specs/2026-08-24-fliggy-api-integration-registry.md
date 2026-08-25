@@ -54,6 +54,15 @@
 
 ### 3.0 官方目录初查结果
 
+**本项目门票查询采用的候选链路：**
+
+| 能力 | 官方接口 | 链接 | 作用 |
+| --- | --- | --- | --- |
+| 景点和门票套餐搜索 | `taobao.alitrip.travel.baseinfo.scenics.get` | [API 25781](https://open.alitrip.com/docs/api.htm?apiId=25781) | 根据城市、景点简称返回景点、经纬度、标准景点 ID 和 `spuList` 门票套餐。 |
+| 单个商品详情 | `taobao.alitrip.travel.item.single.query` | [API 25767](https://open.alitrip.com/docs/api.htm?apiId=25767) | 根据 `item_id` 或 `out_product_id` 返回商品、票种、SKU、日期价格/库存、景点和商品规则。 |
+
+官方文档将两者定位为度假/门票商品发布和查询辅助接口，均标注需要授权。它们可以支撑已接入商品查询，但不代表全网景点搜索，也不提供订单创建、支付或核销。
+
 官方目录中与本项目最相关的接口并不完全符合“面向普通用户实时检索”的目标，必须先确认应用资质与授权范围：
 
 | 能力 | 官方目录条目 | 链接 | 初查结论 |
