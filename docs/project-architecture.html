@@ -517,7 +517,7 @@
             <h3>架构层</h3>
             <p>
               FastAPI 应用入口（<code>backend/app/main.py</code>）挂载安全中间件、CORS、健康检查与前端静态目录；请求进入
-              <code>SequentialTravelOrchestrator</code>，按「天气 → 路线 → 住宿 → 餐饮 → 汇总」顺序运行五类专业 Agent；结果汇总为
+              <code>SequentialTravelOrchestrator</code>，按「天气 → 路线 → 住宿 → 餐饮 → 汇总」顺序运行四类专业 Agent + 汇总 Agent；结果汇总为
               Pydantic 数据合同 <code>TravelPlanDocument</code>，由同源静态前端渲染净化后的 Markdown。
             </p>
           </article>
@@ -541,7 +541,7 @@
             <p>
               <code>GET /api/health</code>（存活）、<code>GET /api/ready</code>（就绪）、<code>POST /api/travel-plans</code>（行程规划）、
               <code>POST /api/documents</code> 与 <code>POST /api/documents/batch</code>（文档库上传）；
-              <code>POST /api/fliggy/tickets/search</code> 为默认关闭的筹备入口。
+              <code>POST /api/fliggy/tickets/search</code> 与 <code>POST /api/fliggy/hotels/search</code> 为默认关闭的筹备入口。
             </p>
           </article>
         </div>
@@ -557,7 +557,7 @@
       <section id="architecture" aria-labelledby="architecture-heading">
         <h2 id="architecture-heading">总体架构</h2>
         <p>
-          系统采用「浏览器 → FastAPI API 层 → <code>SequentialTravelOrchestrator</code> → 五类专业 Agent →
+          系统采用「浏览器 → FastAPI API 层 → <code>SequentialTravelOrchestrator</code> → 四类专业 Agent + 汇总 Agent →
           <code>TravelPlanDocument</code> → 前端展示」的单链路主流程；和风天气、高德地图作为外部依赖节点，
           Pydantic 数据合同与缓存 / 重试 / 熔断作为横切机制。颜色仅作辅助，每个节点均带有可读文本。
         </p>
@@ -567,7 +567,7 @@
             <svg viewBox="0 0 1240 740" role="img" aria-labelledby="arch-svg-title arch-svg-desc"
 >
               <title id="arch-svg-title">系统总体架构图</title>
-              <desc id="arch-svg-desc">浏览器经 FastAPI API 层进入 SequentialTravelOrchestrator，依次运行天气、路线、住宿、餐饮、汇总五类 Agent，输出 TravelPlanDocument 并在前端净化渲染；和风天气与高德地图为外部依赖，Pydantic 数据合同与缓存重试熔断为横切机制。</desc>
+              <desc id="arch-svg-desc">浏览器经 FastAPI API 层进入 SequentialTravelOrchestrator，依次运行天气、路线、住宿、餐饮四个专业 Agent 与汇总 Agent，输出 TravelPlanDocument 并在前端净化渲染；和风天气与高德地图为外部依赖，Pydantic 数据合同与缓存重试熔断为横切机制。</desc>
               <defs>
                 <marker id="arch-arrow" viewBox="0 0 10 10" refX="9" refY="5"
                         markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -593,7 +593,7 @@
               <rect class="d-container" x="70" y="266" width="520" height="250" rx="14" />
               <text class="d-title" x="90" y="292" text-anchor="start">SequentialTravelOrchestrator（固定顺序：天气 → 路线 → 住宿 → 餐饮 → 汇总）</text>
 
-              <!-- 五类专业 Agent -->
+              <!-- 四类专业 Agent + 汇总 Agent -->
               <rect class="d-chain" x="90" y="340" width="80" height="90" rx="8" />
               <text class="d-title" x="130" y="364" text-anchor="middle">天气 Agent</text>
               <text class="d-sub" x="130" y="384" text-anchor="middle">风险等级</text>
@@ -731,7 +731,7 @@
               <!-- 生成 / 规范化标识 -->
               <rect class="d-chain" x="270" y="98" width="360" height="66" rx="10" />
               <text class="d-title" x="450" y="120" text-anchor="middle">生成 / 规范化 request_id 与 trace_id</text>
-              <text class="d-sub" x="450" y="142" text-anchor="middle">中间件读取 x-request-id，否则生成 UUID（v1–v5）</text>
+              <text class="d-sub" x="450" y="142" text-anchor="middle">中间件沿用合法 X-Request-Id（UUID v1–v5），否则生成 UUID v4</text>
               <text class="d-sub" x="450" y="158" text-anchor="middle">trace_id 与 request_id 保持一致</text>
 
               <line class="d-arrow" x1="450" y1="164" x2="450" y2="184" marker-end="url(#flow-arrow)" />
@@ -837,7 +837,7 @@
         <p>
           文档上传与知识检索链路如下：文件在 API 层完成 MIME、后缀与文件签名三重校验后接收（<code>202</code>）或拒绝（<code>422</code>）；
           接收文件经本地文本提取、分块、BGE 向量化写入 Chroma，检索阶段融合关键词与向量命中，由知识润色模块受控回答。
-          MinerU 为规划中能力（当前链路不调用）；Qwen-VL 为受控接入能力，仅用于图表 OCR——文档含图表时在默认处理链路中触发，无 Key 时降级跳过。
+          MinerU 为规划中能力（当前链路不调用）；Qwen-VL 为受控接入能力，仅用于图表 OCR——文档含嵌入图片时在默认处理链路中触发，无 Key 时降级跳过。
         </p>
 
         <figure class="figure">
@@ -845,7 +845,7 @@
             <svg viewBox="0 0 1000 700" role="img" aria-labelledby="doc-svg-title doc-svg-desc"
 >
               <title id="doc-svg-title">文档处理流程</title>
-              <desc id="doc-svg-desc">文档经 MIME、后缀与文件签名三重校验后 202 接收或 422 拒绝；随后本地 PyMuPDF / python-docx 文本提取、分块、BGE 向量化、Chroma 存储，经关键词与向量检索后由知识润色模块受控回答；MinerU 为规划中能力（当前链路不调用），Qwen-VL 为受控接入能力、仅用于图表 OCR（文档含图表时在默认处理链路中触发，无 Key 时降级跳过）。</desc>
+              <desc id="doc-svg-desc">文档经 MIME、后缀与文件签名三重校验后 202 接收或 422 拒绝；随后本地 PyMuPDF / python-docx 文本提取、分块、BGE 向量化、Chroma 存储，经关键词与向量检索后由知识润色模块受控回答；MinerU 为规划中能力（当前链路不调用），Qwen-VL 为受控接入能力、仅用于图表 OCR（文档含嵌入图片时在默认处理链路中触发，无 Key 时降级跳过）。</desc>
               <defs>
                 <marker id="doc-arrow" viewBox="0 0 10 10" refX="9" refY="5"
                         markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -900,7 +900,7 @@
               <line class="d-dashed" x1="540" y1="330" x2="620" y2="348" marker-end="url(#doc-arrow)" />
               <rect class="d-depend" x="620" y="334" width="310" height="56" rx="8" />
               <text class="d-title" x="775" y="356" text-anchor="middle">Qwen-VL · 受控接入</text>
-              <text class="d-sub" x="775" y="376" text-anchor="middle">受控接入 · 仅图表 OCR · 含图表时触发，无 Key 降级</text>
+              <text class="d-sub" x="775" y="376" text-anchor="middle">受控接入 · 仅图表 OCR · 含嵌入图片时触发，无 Key 降级</text>
 
               <line class="d-arrow" x1="300" y1="342" x2="300" y2="356" marker-end="url(#doc-arrow)" />
 
@@ -955,7 +955,7 @@
             <li>提取：PDF 当前始终在本地由 PyMuPDF 提取可访问文本与基础结构，DOCX 用 <code>python-docx</code>；PyMuPDF 不能保证扫描件 OCR、复杂版面、图表或表格的完整还原，此类内容需人工核验。</li>
             <li>向量化与存储：本地 BGE embedding 模型（<code>BGE_MODEL_PATH</code>）分块嵌入，写入 Chroma 集合（<code>CHROMA_COLLECTION_NAME=travel_documents</code>）。</li>
             <li>检索与润色：关键词检索（<code>keyword_search.py</code>）与向量检索经 <code>knowledge_polish.py</code> 受控润色，经 <code>/api/documents/knowledge-search</code> 提供；这些是<strong>已实现组件</strong>，但<strong>尚未接入旅行主规划链路</strong>（<code>POST /api/travel-plans</code> 不调用它们）。</li>
-            <li>MinerU 为<strong>规划中 · 后续受控外发解析</strong>能力（当前处理链路不会调用它）；Qwen-VL 为<strong>受控接入</strong>能力，仅用于图表 OCR——文档含图表时在默认处理链路中调用，无 Key 时降级跳过。</li>
+            <li>MinerU 为<strong>规划中 · 后续受控外发解析</strong>能力（当前处理链路不会调用它）；Qwen-VL 为<strong>受控接入</strong>能力，仅用于图表 OCR——文档含嵌入图片时在默认处理链路中调用，无 Key 时降级跳过。</li>
           </ul>
         </div>
       </section>
@@ -1079,7 +1079,7 @@
               <!-- HALF-OPEN -->
               <rect class="d-chain" x="340" y="616" width="250" height="82" rx="8" />
               <text class="d-title" x="465" y="642" text-anchor="middle">允许探测（HALF-OPEN）</text>
-              <text class="d-sub" x="465" y="664" text-anchor="middle">窗口结束仅放行探测请求</text>
+              <text class="d-sub" x="465" y="664" text-anchor="middle">窗口结束后重置失败计数并放行请求</text>
               <text class="d-sub" x="465" y="682" text-anchor="middle">探测失败 → 计数重新累计</text>
 
               <line class="d-arrow" x1="590" y1="657" x2="630" y2="657" marker-end="url(#res-arrow)" />
