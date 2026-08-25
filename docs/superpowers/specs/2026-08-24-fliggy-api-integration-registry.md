@@ -110,7 +110,22 @@
 
 真实适配器在授权、字段展示许可、真实凭据、沙箱契约测试和安全评审完成前保持关闭。
 
-### 3.3 航班
+#### 3.3 FlyAI 只读文本检索登记（当前阶段）
+
+| 项目 | 当前约定 |
+| --- | --- |
+| 官方依据 | [Quickstart — 飞猪 AI 开放平台](https://flyai.open.fliggy.com/docs/quickstart)、[能力概览](https://flyai.open.fliggy.com/docs)、[FlyAI Skill](https://github.com/alibaba-flyai/flyai-skill) |
+| provider | `FLIGGY_TICKET_PROVIDER=disabled\|mock\|flyai`，默认 `disabled` |
+| 密钥 | `FLYAI_API_KEY`，仅后端读取；真实密钥只放本地/部署环境，不入 Git、测试、日志 |
+| 调用方式 | 官方 `flyai` CLI 子进程 `ai-search --query`；认证由 CLI 经环境变量管理，不猜测 MCP endpoint |
+| 响应 | `data_status=flyai_text`、`summary` 文本摘要、来源与查询时间、固定警告 |
+| 结构化边界 | 不解析、不填充价格、库存、SKU；不提供结构化价格与结构化库存字段，价格/库存固定显示“信息暂不可用”，不以自然语言猜测 |
+| 只读边界 | 不创建订单、不预订、不支付、不退款、不改签、不核销；不收集游客身份信息 |
+| 启用前置 | 后端合同与返回结构实测确认、Key 受控保存与轮换、沙箱验证与安全评审 |
+
+真实结构化价格/库存的展示许可和稳定字段合同确认前，不得把 FlyAI 文本响应当作实时交易数据展示。
+
+### 3.4 航班
 
 | 项目 | 填写内容 | 启用前必填 |
 | --- | --- | --- |

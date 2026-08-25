@@ -69,3 +69,21 @@ def test_readme_describes_ticket_query_as_read_only():
     assert "门票查询" in text
     assert "不创建订单" in text
     assert "不处理支付" in text
+
+
+
+def test_registry_documents_flyai_ticket_read_only_boundary():
+    registry = ROOT / "docs/superpowers/specs/2026-08-24-fliggy-api-integration-registry.md"
+    text = registry.read_text(encoding="utf-8")
+    assert "Quickstart" in text
+    assert "FLYAI_API_KEY" in text
+    assert "ai-search" in text
+    assert "flyai_text" in text
+    assert "不解析价格" in text or "结构化价格" in text
+    assert "不解析库存" in text or "结构化库存" in text
+
+
+def test_readme_documents_flyai_ticket_read_only():
+    text = read_readme()
+    assert "FlyAI" in text
+    assert "FLIGGY_TICKET_PROVIDER" in text
