@@ -333,62 +333,32 @@
 
       <section id="architecture" aria-labelledby="architecture-heading">
         <h2 id="architecture-heading">总体架构</h2>
-        <p>
-          本节将呈现系统总体架构：浏览器通过同源相对路径访问 FastAPI API 层，请求进入 <code>SequentialTravelOrchestrator</code>
-          按「天气 → 路线 → 住宿 → 餐饮 → 汇总」执行五类专业 Agent，结果汇总为 <code>TravelPlanDocument</code> 返回前端；
-          和风天气、高德地图、Pydantic 数据合同与缓存/重试/熔断作为依赖或横切能力标注。
-        </p>
-        <p>（骨架阶段：架构图与文字图例将在后续步骤补充。）</p>
+        <p>本节将展示系统总体架构图与文字图例，具体内容由后续任务补充。</p>
       </section>
 
       <section id="travel-flow" aria-labelledby="travel-flow-heading">
         <h2 id="travel-flow-heading">旅行规划流程</h2>
-        <p>
-          本节将绘制旅行规划请求的端到端流程：表单提交 → 请求合同校验 → 生成/规范化 <code>request_id</code> 与 <code>trace_id</code>
-          → 五阶段顺序编排 → 受控失败处理 → 汇总生成文档 → 前端净化 Markdown。
-          <code>itinerary</code> 是唯一机器可消费的事实载体，<code>markdown</code> 为表现层；单个 Agent 异常转为受控
-          <code>failed</code> 后，其余可用信息继续汇总。
-        </p>
-        <p>（骨架阶段：流程 SVG 与关键约束说明将在后续步骤补充。）</p>
+        <p>本节将展示旅行规划请求的端到端流程，具体内容由后续任务补充。</p>
       </section>
 
       <section id="document-flow" aria-labelledby="document-flow-heading">
         <h2 id="document-flow-heading">文档处理流程</h2>
-        <p>
-          本节将绘制文档处理链路：上传校验 → 本地文本提取 → 分块 → BGE Embedding → Chroma 存储与检索。
-          当前 PDF 由 PyMuPDF 本地提取；MinerU 保留为后续受控外发解析能力，Qwen-VL 仅用于图表 OCR。
-        </p>
-        <p>（骨架阶段：文档处理流程图与边界说明将在后续步骤补充。）</p>
+        <p>本节将展示文档上传、解析、向量化与检索流程，具体内容由后续任务补充。</p>
       </section>
 
       <section id="resilience" aria-labelledby="resilience-heading">
         <h2 id="resilience-heading">熔断与韧性</h2>
-        <p>
-          本节将绘制缓存、重试、熔断与恢复判断顺序：缓存命中返回 <code>cached</code>；未命中访问上游；仅连接错误、超时、HTTP 429 与 5xx
-          进行最多 3 次指数退避重试；连续失败达到阈值进入熔断打开状态，窗口结束后允许探测，探测成功恢复、失败继续降级。
-          默认 <code>CIRCUIT_BREAKER_FAILURE_THRESHOLD=3</code>、<code>CIRCUIT_BREAKER_OPEN_SECONDS=60</code>，为进程内行为而非分布式流量治理。
-        </p>
-        <p>（骨架阶段：熔断状态图与参数说明将在后续步骤补充。）</p>
+        <p>本节将展示缓存、重试、熔断与恢复流程，具体内容由后续任务补充。</p>
       </section>
 
       <section id="status-contract" aria-labelledby="status-contract-heading">
         <h2 id="status-contract-heading">状态合同</h2>
-        <p>
-          本节将以表格表达 <code>success</code>、<code>partial</code>、<code>degraded</code>、<code>failed</code> 四种状态对
-          <code>data</code>、<code>missing_fields</code>、<code>error</code> 的数据合同要求，并说明顶层文档使用
-          <code>success</code>、<code>degraded</code> 或 <code>failed</code>：存在 <code>partial</code> 或 <code>degraded</code>
-          专业结果时顶层为 <code>degraded</code>，存在任意 <code>failed</code> 专业结果时顶层为 <code>failed</code>。
-        </p>
-        <p>（骨架阶段：状态判断矩阵将在后续步骤补充。）</p>
+        <p>本节将展示状态判断矩阵与顶层状态规则，具体内容由后续任务补充。</p>
       </section>
 
       <section id="security" aria-labelledby="security-heading">
         <h2 id="security-heading">安全与限制</h2>
-        <p>
-          本节将说明安全边界与当前限制：服务端密钥、固定供应商域名、同源相对路径、原始响应不透传、交易字段禁入、Markdown 经
-          <code>DOMPurify</code> 净化；以及认证、限流、租户隔离、集中式密钥管理、审计和监控告警等尚未实现的生产化能力。
-        </p>
-        <p>（骨架阶段：安全边界卡片与当前限制说明将在后续步骤补充。）</p>
+        <p>本节将展示安全边界与当前限制说明，具体内容由后续任务补充。</p>
       </section>
     </main>
   </div>
@@ -397,19 +367,5 @@
     <p>本页面为离线自包含 HTML，不加载外部资源；事实来源为仓库当前代码与 README。</p>
   </footer>
 
-  <script>
-    // 主题基础初始化：若浏览器此前保存过主题偏好则应用，使深色覆盖 selector 生效。
-    // 脚本异常不影响正文阅读，localStorage 不可用时按系统主题渲染。
-    (function () {
-      try {
-        var theme = localStorage.getItem("theme");
-        if (theme === "light" || theme === "dark") {
-          document.documentElement.dataset.theme = theme;
-        }
-      } catch (e) {
-        /* 忽略：回退到系统主题 */
-      }
-    })();
-  </script>
 </body>
 </html>
