@@ -331,6 +331,10 @@
     .theme-toggle:hover {
       background: var(--color-code-bg);
     }
+    .theme-toggle:focus-visible {
+      outline: 2px solid var(--color-focus);
+      outline-offset: 2px;
+    }
 
     /* ===== 状态合同判断矩阵 ===== */
     .contract-scroll {
@@ -1131,11 +1135,11 @@
           <table class="contract-table">
             <thead>
               <tr>
-                <th>状态</th>
-                <th><code>data</code></th>
-                <th><code>missing_fields</code></th>
-                <th><code>error</code></th>
-                <th>含义与合同要求</th>
+                <th scope="col">状态</th>
+                <th scope="col"><code>data</code></th>
+                <th scope="col"><code>missing_fields</code></th>
+                <th scope="col"><code>error</code></th>
+                <th scope="col">含义与合同要求</th>
               </tr>
             </thead>
             <tbody>
@@ -1150,7 +1154,7 @@
                 <td><code>partial</code></td>
                 <td>有部分 <code>data</code></td>
                 <td>必须列出缺失字段</td>
-                <td>不允许</td>
+                <td>不要求</td>
                 <td>部分字段可用，缺失部分明确声明，等待后续补齐。</td>
               </tr>
               <tr>
@@ -1186,7 +1190,7 @@
           <ul>
             <li><code>retrieved_at</code>：本次获取 / 缓存读取时间。</li>
             <li><code>source_updated_at</code>：上游真实更新时间；上游未提供时为 <code>null</code>，不能用 <code>retrieved_at</code> 伪造。</li>
-            <li><code>data_status</code>：<code>realtime</code> / <code>cached</code> / <code>degraded</code>。</li>
+            <li><code>data_status</code>：<code>realtime</code> / <code>cached</code> / <code>degraded</code>（模型另保留 <code>knowledge_base</code> 枚举，本轮不接）。</li>
           </ul>
         </div>
       </section>
