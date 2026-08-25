@@ -98,3 +98,39 @@ async def test_search_truncates_overlong_text_to_8000_chars() -> None:
     result = await FlyAIClient("server-secret", runner=fake_run).search("西湖", date(2026, 9, 1))
 
     assert len(result) == 8000
+
+
+@pytest.mark.asyncio
+async def test_search_accepts_valid_json_even_when_exit_code_nonzero() -> None:
+    # Windows 上官方 flyai CLI 可能因 libuv 断言退出码非 0，但 stdout 仍是有效 JSON。
+    async def fake_run(command, args, timeout):
+        return (127, '{"data":"西湖门票摘要"}', "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)")
+
+    result = await FlyAIClient("server-secret", runner=fake_run).search("西湖", date(2026, 9, 1))
+
+    assert result == "西湖门票摘要"
+
+
+def test_resolve_command_wraps_cmd_shim_on_windows(monkeypatch):
+    from app.services import fliggy_flyai_client as module
+
+    monkeypatch.setattr(module.sys, "platform", "win32")
+    monkeypatch.setattr(
+        module.shutil,
+        "which",
+        lambda command: r"C:\Users\asus\AppData\Roaming\npm\flyai.CMD",
+    )
+
+    resolved = module._resolve_command("flyai")
+
+    assert isinstance(resolved, list)
+    assert resolved[-1] == r"C:\Users\asus\AppData\Roaming\npm\flyai.CMD"
+    assert "/c" in resolved
+
+
+def test_resolve_command_keeps_plain_command_on_non_windows(monkeypatch):
+    from app.services import fliggy_flyai_client as module
+
+    monkeypatch.setattr(module.sys, "platform", "linux")
+
+    assert module._resolve_command("flyai") == "flyai"
