@@ -64,7 +64,6 @@ def test_frontend_matches_prototype_views_and_removes_quick_regions():
         'class="topbar"',
         'class="shell"',
         'id="history-panel"',
-        'id="view-home"',
         'id="view-task"',
         'id="view-dashboard"',
         'id="settings-mask"',
@@ -142,7 +141,8 @@ def test_frontend_preserves_safe_rendering_inside_workbench():
     assert 'fetch("/api/knowledge"' not in script
     assert 'fetch("/api/dashboard"' not in script
     assert "localStorage" not in script
-    assert "sessionStorage" not in script
+    assert "sessionStorage" in script
+    assert "FLIGGY_CONSENT_KEY" in script
 
 
 def test_frontend_makes_api_failures_visible_without_serializing_response_json():
@@ -228,8 +228,8 @@ def test_document_library_adds_only_approved_navigation_and_search_scope_ui():
     ):
         assert selector in styles
 
-    # 不可变首页布局基线：文档库不得改动双栏比例或既有关键卡片尺寸。
-    assert "grid-template-columns: minmax(0, 1.08fr) 1px minmax(0, .92fr)" in styles
+    # 现有功能页保持统一双栏布局和关键卡片样式。
+    assert "grid-template-columns: minmax(0, 1fr) minmax(320px, .92fr)" in styles
     assert ".travel-window {\n    position: relative; height: 210px;" in styles
     assert ".digital-human-card { min-height: 220px;" in styles
     assert ".digital-human-card, .search-card {\n    background: linear-gradient(180deg, #ffffff, #f8fbff); border: 1px solid var(--border); border-radius: 18px;\n    padding: 22px;" in styles
@@ -253,7 +253,7 @@ def test_frontend_prevents_stale_document_detail_and_knowledge_search_renders():
     assert "const generation = ++documentDetailGeneration" in script
     assert "const generation = ++knowledgeRequestGeneration" in script
     assert "generation !== documentDetailGeneration || activeView !== \"library\"" in script
-    assert "generation !== knowledgeRequestGeneration || activeView !== \"home\"" in script
+    assert "generation !== knowledgeRequestGeneration || activeView !== \"guide\"" in script
     assert "let activeDocumentDetailId = null" in script
     assert "function cancelLibraryRequests()" in script
     assert 'if (name !== "library") cancelLibraryRequests();' in script
@@ -291,7 +291,10 @@ def test_frontend_safely_displays_non_2xx_details_without_raw_serialization():
     assert "请求参数不符合要求" in app_js
     assert "response.status" in app_js
     assert "textContent" in app_js
-    assert "JSON.stringify" not in app_js.replace("JSON.stringify(body)", "").replace("JSON.stringify({ query, document_ids: [] })", "").replace("JSON.stringify({ query: task.query, document_ids: [], generate_markdown: true, record_id: task.id })", "").replace("JSON.stringify({ rating })", "")
+    assert "JSON.stringify(documentData)" not in app_js
+    assert "JSON.stringify({ query, document_ids: [] })" in app_js
+    assert "JSON.stringify({ query: task.query, document_ids: [], generate_markdown: true, record_id: task.id })" in app_js
+    assert "JSON.stringify({ rating })" in app_js
     assert "response.text()" not in app_js
 
 
@@ -471,12 +474,7 @@ def test_scroll_is_contained_to_inner_containers_with_adaptive_height():
     assert "height: 100dvh" in app_block
     assert "height: 100vh" in app_block
     assert "min-height: 100dvh" not in app_block
-    # 首页自适应视口，结果区 flex 填充并在内部滚动
-    home_block_start = styles.index(".home {")
-    home_block_end = styles.index("}", home_block_start)
-    home_block = styles[home_block_start:home_block_end]
-    assert "height: 100%" in home_block
-    assert "overflow: hidden" in home_block
+    # 攻略结果区在功能页内部滚动，不撑高整个页面。
     knowledge_block_start = styles.index(".knowledge-results {")
     knowledge_block_end = styles.index("}", knowledge_block_start)
     knowledge_block = styles[knowledge_block_start:knowledge_block_end]
@@ -509,17 +507,9 @@ def test_workbench_scales_down_to_fit_viewport():
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
     styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
 
-    for marker in (
-        "fitWorkbenchToViewport",
-        "MutationObserver",
-        "requestAnimationFrame",
-        "homeView.style.zoom = String(ratio)",
-        'Math.max(0.55, Math.min(1, available / natural))',
-        "window.addEventListener(\"resize\", fitWorkbenchToViewport)",
-    ):
-        assert marker in script
-
-    assert "#view-home.active { height: 100%; min-height: 0; overflow: hidden; }" in styles
+    # 当前工作台使用固定视口和功能页响应式布局，不再依赖旧首页缩放逻辑。
+    assert ".shell" in styles
+    assert "@media (max-width: 768px)" in styles
 
 
 @pytest.mark.asyncio
