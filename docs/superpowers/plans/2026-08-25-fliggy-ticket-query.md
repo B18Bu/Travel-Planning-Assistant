@@ -19,9 +19,11 @@
 
 ## 实施边界
 
-### 当前可实施阶段：默认关闭态
+### 当前可实施阶段：默认关闭态与本地 Mock
 
-可以实现输入合同、服务状态、导航入口、页面筹备态、会话同意和测试，但不访问飞猪，不显示模拟价格/库存，不提供预订按钮。
+可以实现输入合同、服务状态、导航入口、会话同意、结构化本地 Mock 和测试。Mock 仅模拟 `25781 → 25767` 的响应结构，固定标记为 `mock` / “本地演示数据”，不得访问飞猪，不得标记为 `realtime`，不提供预订按钮。
+
+`FLIGGY_MOCK_ENABLED=false` 默认关闭；开启后只注入本地演示服务，仍不创建外部 HTTP 客户端。真实飞猪适配器保持关闭，直到登记表中的授权、字段展示许可、凭据和沙箱验收前置条件全部完成。
 
 ### 授权后阶段：真实只读查询
 
@@ -60,10 +62,10 @@
 | --- | --- |
 | `backend/app/config.py` | 按正式合同增加 TOP Router、凭据名称、开关和超时配置。 |
 | `backend/app/models/fliggy.py` | 增加景点、商品、日期库存、规则和规范化响应模型。 |
-| `backend/app/services/fliggy.py` | 实现签名、三段调用链、字段白名单、实时查询和错误归类。 |
+| `backend/app/services/fliggy.py` | 实现 Mock 结构适配和默认关闭服务；真实签名、外部调用链与实时查询保持关闭。 |
 | `backend/app/api/fliggy.py` | 将查询路由接入真实服务并映射受控错误。 |
 | `backend/tests/test_fliggy_service.py` | 使用官方样例 Mock 验证请求映射、调用顺序、结果和错误。 |
-| `frontend/app.js` | 安全渲染门票商品卡片、价格、库存、图片和规则。 |
+| `frontend/app.js` | 安全渲染紧凑门票商品卡片、价格、库存、图片、规则、来源、时间和 Mock 警告。 |
 | `frontend/styles.css` | 真实门票结果卡片样式。 |
 | `docs/superpowers/specs/2026-08-24-fliggy-api-integration-registry.md` | 记录授权、字段映射和验收结果。 |
 | `README.md`、`docs/项目宪法.md` | 记录飞猪授权只读查询例外和发布边界。 |
@@ -490,7 +492,7 @@ git commit -m "docs: 说明门票查询关闭态边界"
 
 ---
 
-## 阶段 B：取得授权后实现真实查询
+## 阶段 B：取得授权后实现真实查询（本轮不实施）
 
 ### 任务 5：固化正式配置与响应模型
 
@@ -542,7 +544,7 @@ git add backend/app/config.py backend/app/models/fliggy.py backend/tests/test_co
 git commit -m "feat: 固化门票查询领域合同"
 ```
 
-### 任务 6：实现三段飞猪只读调用链
+### 任务 6：真实飞猪只读调用链（授权后，当前不实施）
 
 **文件：**
 - 修改：`backend/app/services/fliggy.py`
@@ -584,9 +586,9 @@ python -m pytest -c backend/pytest.ini backend/tests/test_fliggy_service.py -q
 
 预期：FAIL，正式适配器或调用顺序尚不存在。
 
-- [ ] **步骤 3：实现适配器**
+- [ ] **步骤 3：实现真实适配器（当前保持关闭，不执行）**
 
-实现内部接口：
+该任务在本轮明确不实施。只有授权登记表完成并经安全评审后，才可实现内部接口：
 
 ```python
 class FliggyTicketService:
@@ -625,7 +627,7 @@ git add backend/app/services/fliggy.py backend/tests/test_fliggy_service.py
 git commit -m "feat: 接入飞猪门票只读查询"
 ```
 
-### 任务 7：接通 API 并安全渲染门票结果
+### 任务 7：真实 API 接通与实时结果（授权后，当前不实施）
 
 **文件：**
 - 修改：`backend/app/api/fliggy.py`
