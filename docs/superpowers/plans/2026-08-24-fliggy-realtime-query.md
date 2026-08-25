@@ -12,6 +12,11 @@
 
 - [飞猪实时车票与酒店查询设计](../specs/2026-08-24-fliggy-realtime-query-design.md)
 - [飞猪 API 接入资料登记表](../specs/2026-08-24-fliggy-api-integration-registry.md)
+- [飞猪开放平台 API 总目录](https://open.alitrip.com/doc2/apiList.htm)
+- [火车票 API 类目](https://open.alitrip.com/docs/api_list.htm?cid=20540)
+- [酒店商品 API 类目](https://open.alitrip.com/docs/api_list.htm?cid=20752)
+- [酒店在线预订 API 类目](https://open.alitrip.com/docs/api_list.htm?cid=20753)
+- [国内机票京杭 API 类目](https://open.alitrip.com/docs/api_list.htm?cid=20764)
 
 ---
 
@@ -563,7 +568,45 @@ git commit -m "docs: 说明飞猪查询筹备边界"
 
 > **启动门槛：** 未获得正式飞猪文档与凭据时，不得执行本阶段的任何编码步骤。开始前必须先补齐 `docs/superpowers/specs/2026-08-24-fliggy-api-integration-registry.md`，并将具体端点、字段、认证与限流规则反映到本计划的后续修订版本。
 
-### 任务 5：根据正式合同锁定配置与响应模型
+### 任务 5：根据官方目录锁定候选接口与接入范围
+
+**文件：**
+- 修改：`docs/superpowers/specs/2026-08-24-fliggy-api-integration-registry.md`
+- 修改：`docs/superpowers/plans/2026-08-24-fliggy-realtime-query.md`
+
+- [ ] **步骤 1：确认业务能力与官方接口的匹配关系**
+
+根据官方目录初查结果，先按以下边界修正产品设计：
+
+1. **火车票：** 当前目录主要是代理商订单/出票/退改/候补接口；`alitrip.btrip.train.city.suggest` 和 `alitrip.btrip.supplychain.train.city` 只能提供城市/车站编码，不能证明存在可直接调用的车次列表查询接口。未找到合适的车次搜索接口前，车票页只能保持“服务筹备中”，不能承诺火车实时票价或余票。
+2. **航班：** `alitrip.flight.service.search` 是需要授权、聚石塔内调用的航班询价接口；`alitrip.btrip.flight.distribution.flightlist` 是商旅机票分销询价接口，标注不需要授权但要求 `sub_channel`，需先确认应用类型和渠道资质。
+3. **酒店：** `alitrip.btrip.hotel.distribution.search.low.price` 可提供入住/离店日期、城市、渠道子 ID、排序和分页下的酒店最低价；`alitrip.btrip.hotel.distribution.search.detail` 可提供房型、库存价格、配额、取消政策和促销等详情；两者都需要确认分销渠道资格和字段展示许可。
+4. **交易接口：** `airbook`、支付、酒店订单创建/支付/取消及火车出票/订单接口全部排除，不得加入只读查询适配器。
+
+- [ ] **步骤 2：将官方事实写入登记表**
+
+在 `docs/superpowers/specs/2026-08-24-fliggy-api-integration-registry.md` 记录具体 API 名称、`apiId`、官方链接、授权标识、调用地址、`session` 要求、请求字段、返回字段、金额单位和目录中的维护状态。将“未找到火车车次搜索接口”作为明确阻塞项，而不是用订单查询接口替代。
+
+- [ ] **步骤 3：运行文档链接与结构检查**
+
+运行：
+
+```powershell
+$env:PYTHONPATH = "$PWD\backend"
+python -m pytest -c backend/pytest.ini backend/tests/test_docs.py -q
+python -m pytest -c backend/pytest.ini backend/tests/test_docs.py -q
+```
+
+预期：现有文档测试通过；重复运行用于确认新增外部链接未破坏文档编码或结构。
+
+- [ ] **步骤 4：提交官方目录核查结果**
+
+```powershell
+git add docs/superpowers/specs/2026-08-24-fliggy-api-integration-registry.md docs/superpowers/plans/2026-08-24-fliggy-realtime-query.md
+git commit -m "docs: 纳入飞猪官方接口核查结果"
+```
+
+### 任务 6：根据正式合同锁定配置与响应模型
 
 **文件：**
 - 修改：`backend/app/config.py`
@@ -615,7 +658,7 @@ git add backend/app/config.py backend/app/models/fliggy.py backend/tests/test_co
 git commit -m "feat: 固化飞猪授权查询合同"
 ```
 
-### 任务 6：实现并验证飞猪只读服务适配器
+### 任务 7：实现并验证飞猪只读服务适配器
 
 **文件：**
 - 修改：`backend/app/services/fliggy.py`
@@ -686,7 +729,7 @@ git add backend/app/services/fliggy.py backend/tests/test_fliggy_service.py
 git commit -m "feat: 接入飞猪只读查询服务"
 ```
 
-### 任务 7：启用 API、渲染授权结果并做契约回归
+### 任务 8：启用 API、渲染授权结果并做契约回归
 
 **文件：**
 - 修改：`backend/app/api/fliggy.py`
@@ -769,7 +812,7 @@ git add backend/app/api/fliggy.py backend/app/main.py frontend/app.js frontend/s
 git commit -m "feat: 启用飞猪实时查询页面"
 ```
 
-### 任务 8：更新治理文档并完成发布门禁
+### 任务 9：更新治理文档并完成发布门禁
 
 **文件：**
 - 修改：`README.md`
