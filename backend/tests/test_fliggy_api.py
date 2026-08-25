@@ -3,13 +3,14 @@ import pytest
 
 from app.config import Settings
 from app.main import create_app
-from app.services.fliggy import FlyAIFliggyTicketService
+from app.services.fliggy import DisabledFliggyTicketService, FlyAIFliggyTicketService
 from app.services.fliggy_flyai_client import FlyAIUpstreamError
 
 
 @pytest.mark.asyncio
 async def test_fliggy_status_is_unavailable_by_default():
-    app = create_app()
+    # 显式注入关闭服务，隔离本地 .env 可能开启的 provider。
+    app = create_app(fliggy_ticket_service=DisabledFliggyTicketService())
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
         response = await client.get("/api/fliggy/status")
@@ -23,7 +24,7 @@ async def test_fliggy_status_is_unavailable_by_default():
 
 @pytest.mark.asyncio
 async def test_ticket_search_is_closed_without_fliggy_request():
-    app = create_app()
+    app = create_app(fliggy_ticket_service=DisabledFliggyTicketService())
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
         response = await client.post(
@@ -41,7 +42,7 @@ async def test_ticket_search_is_closed_without_fliggy_request():
 
 @pytest.mark.asyncio
 async def test_ticket_search_rejects_unknown_client_fields():
-    app = create_app()
+    app = create_app(fliggy_ticket_service=DisabledFliggyTicketService())
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
         response = await client.post(
