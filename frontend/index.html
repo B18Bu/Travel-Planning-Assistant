@@ -68,7 +68,7 @@
         </div>
       </div>
 
-      <div class="side-section"><div class="side-label">功能</div><button class="side-nav" id="nav-plan" onclick="showView('plan')"><span>🧭</span> 行程规划</button><button class="side-nav" id="nav-guide" onclick="showView('guide')"><span>🔎</span> 攻略查询</button><button class="side-nav" id="nav-ticket" onclick="showView('ticket')"><span>🎟️</span> 门票查询</button></div>
+      <div class="side-section"><div class="side-label">功能</div><button class="side-nav" id="nav-plan" onclick="showView('plan')"><span>🧭</span> 行程规划</button><button class="side-nav" id="nav-guide" onclick="showView('guide')"><span>🔎</span> 攻略查询</button><button class="side-nav" id="nav-ticket" onclick="showView('ticket')"><span>🎟️</span> 门票查询</button><button class="side-nav" id="nav-hotel" onclick="showView('hotel')"><span>🏨</span> 酒店推荐</button></div>
 
       <div class="side-section">
         <div class="side-label">管理</div>
@@ -215,14 +215,45 @@
             <p>查询景点门票、指定日期价格、库存和入园规则。当前仅提供查询，不创建订单或处理支付。</p>
           </div>
           <p id="ticket-service-status" class="fliggy-status" role="status" aria-live="polite"></p>
-          <form id="ticket-form" class="fliggy-form">
-            <label>景点关键词<input id="ticket-scenic-keyword" name="scenic_keyword" maxlength="100" placeholder="例如：西湖" required></label>
-            <label>入园日期<input id="ticket-entry-date" name="entry_date" type="date" required></label>
-            <label>游客人数<input id="ticket-visitor-count" name="visitor_count" type="number" min="1" max="20" value="1" required></label>
-            <button id="ticket-submit" class="btn-primary" type="submit" disabled>查询门票</button>
-          </form>
+          <div class="ticket-query-card">
+            <form id="ticket-form" class="fliggy-form">
+              <div class="ticket-query-fields">
+                <label class="ticket-query-field scenic">景点关键词<input id="ticket-scenic-keyword" name="scenic_keyword" maxlength="100" placeholder="例如：西湖" required></label>
+                <label class="ticket-query-field">入园日期<input id="ticket-entry-date" name="entry_date" type="date" required></label>
+                <label class="ticket-query-field">游客人数<input id="ticket-visitor-count" name="visitor_count" type="number" min="1" max="20" value="1" required></label>
+              </div>
+              <div class="ticket-query-actions">
+                <button id="ticket-submit" class="btn-primary" type="submit" disabled>查询门票</button>
+              </div>
+            </form>
+          </div>
           <p class="fliggy-notice">本系统仅提供门票信息查询，请通过飞猪官方渠道完成购买。本页面不收集游客身份信息，不创建订单或处理支付。</p>
           <section id="ticket-results" class="fliggy-results" hidden></section>
+        </div>
+      </section>
+
+      <section id="view-hotel" class="view">
+        <div class="feature-page hotel-page">
+          <div class="feature-page-head">
+            <div>Hotel Recommendation</div>
+            <h2>酒店推荐</h2>
+            <p>按城市与入住 / 离店日期，并列展示 FlyAI 酒店价格与高德住宿 POI 位置的匹配结果。当前仅提供查询，不创建订单或处理支付。</p>
+          </div>
+          <p id="hotel-service-status" class="hotel-status" role="status" aria-live="polite"></p>
+          <div class="hotel-query-card">
+            <form id="hotel-form" class="hotel-form">
+              <div class="hotel-query-fields">
+                <label class="hotel-query-field">城市<input id="hotel-city" name="city_name" maxlength="100" placeholder="例如：杭州" required></label>
+                <label class="hotel-query-field">入住日期<input id="hotel-check-in" name="check_in" type="date" required></label>
+                <label class="hotel-query-field">离店日期<input id="hotel-check-out" name="check_out" type="date" required></label>
+              </div>
+              <div class="hotel-query-actions">
+                <button id="hotel-submit" class="btn-primary" type="submit">查询酒店</button>
+              </div>
+            </form>
+          </div>
+          <p class="hotel-notice">本页面仅展示查询时刻的酒店价格与位置信息，价格不代表最终成交价，请通过官方渠道核实并完成购买。</p>
+          <section id="hotel-results" class="hotel-results" hidden></section>
         </div>
       </section>
 

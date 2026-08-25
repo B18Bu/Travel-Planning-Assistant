@@ -9,9 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.documents import router as documents_router
 from app.api.fliggy import router as fliggy_router
+from app.api.flyai_hotel import router as flyai_hotel_router
 from app.api.travel import router as travel_router
 from app.config import Settings, get_settings
-from app.dependencies import build_orchestrator
+from app.dependencies import (
+    build_flyai_hotel_recommendation_service,
+    build_hotel_search_service,
+    build_orchestrator,
+)
 from app.security import SecurityHeadersMiddleware
 from app.services.chroma_store import ChromaStore
 from app.services.deepseek import DeepSeekClient
@@ -65,6 +70,8 @@ def create_app(
     document_processor=None,
     chroma_store=None,
     fliggy_ticket_service=None,
+    fliggy_hotel_service=None,
+    flyai_hotel_recommendation_service=None,
 ) -> FastAPI:
     """创建 v1 后端应用。"""
 
@@ -95,6 +102,11 @@ def create_app(
         )
     app.state.query_record_store = QueryRecordStore(app.state.document_store.data_dir)
     app.state.fliggy_ticket_service = fliggy_ticket_service or _build_ticket_service(settings)
+    app.state.fliggy_hotel_service = fliggy_hotel_service or build_hotel_search_service(settings)
+    app.state.flyai_hotel_recommendation_service = (
+        flyai_hotel_recommendation_service
+        or build_flyai_hotel_recommendation_service(settings)
+    )
     app.state.knowledge_polisher = KnowledgePolisher(
         DeepSeekClient(
             settings.deepseek_api_key,
@@ -126,6 +138,7 @@ def create_app(
     app.include_router(travel_router)
     app.include_router(documents_router)
     app.include_router(fliggy_router)
+    app.include_router(flyai_hotel_router)
     image_dir = _image_dir()
     if image_dir.is_dir():
         mimetypes.add_type("image/webp", ".webp")

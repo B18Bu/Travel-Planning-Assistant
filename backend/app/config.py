@@ -21,6 +21,19 @@ class Settings(BaseSettings):
     fliggy_ticket_provider: Literal["disabled", "mock", "flyai"] = "disabled"
     flyai_api_key: str = ""
     flyai_timeout_seconds: int = Field(default=30, ge=1, le=120)
+    fliggy_hotel_enabled: bool = False
+    fliggy_hotel_app_key: str = ""
+    fliggy_hotel_app_secret: str = ""
+    fliggy_hotel_sub_channel: str = ""
+    fliggy_hotel_api_url: str = "https://eco.taobao.com/router/rest"
+    # FlyAI 酒店推荐服务开关，默认关闭；未完成 Key 配置时不得开启。
+    flyai_hotel_enabled: bool = False
+    # FlyAI CLI 可执行命令，默认值：flyai；仅后端控制，不接受客户端覆盖。
+    flyai_cli_command: str = "flyai"
+    # FlyAI CLI 单次调用总超时，单位：秒，默认值：20.0；仅后端控制，不接受客户端覆盖。
+    flyai_cli_timeout_seconds: float = Field(default=20.0, gt=0)
+    # FlyAI 酒店推荐单次最多返回结果数，默认值：10，范围：1—20；仅后端控制，不接受客户端覆盖。
+    flyai_hotel_limit: int = Field(default=10, ge=1, le=20)
     allowed_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173"]
     )
@@ -90,6 +103,15 @@ class Settings(BaseSettings):
     amap_route_cache_ttl_seconds: int = Field(default=900, gt=0)
     # 高德 POI 搜索结果的进程内缓存 TTL，单位为秒，默认值：3600；仅由后端控制，不接受客户端覆盖。
     amap_poi_cache_ttl_seconds: int = Field(default=3600, gt=0)
+
+    @field_validator("fliggy_hotel_api_url", mode="before")
+    @classmethod
+    def validate_fliggy_hotel_api_url(cls, value: str) -> str:
+        """仅允许飞猪酒店官方固定 HTTPS 网关。"""
+
+        if value != "https://eco.taobao.com/router/rest":
+            raise ValueError("飞猪酒店网关必须使用固定官方 HTTPS 地址")
+        return value
 
     @field_validator("mineru_base_url", mode="before")
     @classmethod

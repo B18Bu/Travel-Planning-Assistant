@@ -39,6 +39,10 @@ def test_frontend_uses_ticket_query_view():
     assert "门票查询" in html
     assert 'id="view-ticket"' in html
     assert 'id="ticket-form"' in html
+    assert 'class="ticket-query-card"' in html
+    assert 'class="ticket-query-fields"' in html
+    assert 'class="ticket-query-actions"' in html
+    assert 'class="ticket-query-field scenic"' in html
     assert '"/api/fliggy/status"' in script
     assert "sessionStorage" in script
     assert "预订" not in html
@@ -526,3 +530,86 @@ async def test_health_api_starts_when_frontend_directory_is_missing(monkeypatch,
     assert response.json() == {"status": "ok"}
     assert root_response.status_code == 404
     assert not any(getattr(route, "name", "") == "frontend" for route in app.routes)
+
+
+def test_frontend_adds_hotel_recommendation_view():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    for marker in (
+        'id="view-hotel"',
+        'id="nav-hotel"',
+        "showView('hotel')",
+        'id="hotel-form"',
+        'id="hotel-city"',
+        'id="hotel-check-in"',
+        'id="hotel-check-out"',
+        'id="hotel-submit"',
+        'id="hotel-service-status"',
+        'id="hotel-results"',
+    ):
+        assert marker in html
+
+    for marker in (
+        'fetch("/api/fliggy/hotels/recommend"',
+        "hotelForm.addEventListener",
+        "submitHotelSearch",
+        "renderHotelResults",
+        "buildHotelBody",
+        "isHttpsUrl",
+        "位置暂无匹配",
+        "价格暂不可用",
+        "官方详情",
+    ):
+        assert marker in script
+
+    for selector in (
+        ".hotel-query-card",
+        ".hotel-query-fields",
+        ".hotel-card",
+        ".hotel-tag",
+        ".hotel-detail-link",
+        ".hotel-results",
+    ):
+        assert selector in styles
+
+
+def test_frontend_hotel_cards_use_safe_dom_rendering_and_https_links():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    # 供应商字段用 textContent/createElement 渲染，不拼接 innerHTML。
+    assert "detailLink.textContent = \"官方详情\"" in script
+    assert "target = \"_blank\"" in script
+    assert "rel = \"noopener noreferrer\"" in script
+    assert 'new URL(value, window.location.href).protocol === "https:"' in script
+    assert "image.addEventListener(\"error\", () => image.remove())" in script
+    assert "hotel.amap_address || \"位置暂无匹配\"" in script
+    assert "hotel.flyai_price == null ? \"价格暂不可用\"" in script
+    # 不允许出现 http://，也不允许把空价格兜底为 0。
+    assert "http://" not in script
+    assert "flyai_price || 0" not in script
+
+
+def test_frontend_hotel_failures_distinguish_closed_and_upstream():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "response.status === 503" in script
+    assert "response.status === 502" in script
+    assert "酒店推荐服务尚未配置" in script
+    assert "上游酒店查询服务暂不可用" in script
+
+
+def test_frontend_hotel_does_not_promise_booking_or_inventory():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    # 酒店推荐渲染逻辑不展示可预订承诺。
+    assert "可预订" not in script
+    # 酒店视图区域不含库存 / 下单 / 预订字样（门票视图不在此检查范围）。
+    hotel_start = html.index('id="view-hotel"')
+    hotel_end = html.index("<!-- 任务结果视图 -->", hotel_start)
+    hotel_html = html[hotel_start:hotel_end]
+    assert "库存" not in hotel_html
+    assert "预订" not in hotel_html
+    assert "下单" not in hotel_html

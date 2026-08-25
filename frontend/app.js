@@ -34,6 +34,12 @@
   const ticketServiceStatus = document.getElementById("ticket-service-status");
   const ticketResults = document.getElementById("ticket-results");
   const fliggyConsentMask = document.getElementById("fliggy-consent-mask");
+  const hotelForm = document.getElementById("hotel-form");
+  const hotelCheckIn = document.getElementById("hotel-check-in");
+  const hotelCheckOut = document.getElementById("hotel-check-out");
+  const hotelSubmit = document.getElementById("hotel-submit");
+  const hotelServiceStatus = document.getElementById("hotel-service-status");
+  const hotelResults = document.getElementById("hotel-results");
   const result = taskView;
   const tasks = [];
   let documents = [];
@@ -460,6 +466,171 @@
     ticketResults.hidden = false;
   }
 
+  function isHttpsUrl(value) {
+    if (typeof value !== "string" || !value) return false;
+    try {
+      return new URL(value, window.location.href).protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  function formatHotelTime(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "未知" : formatIndexTime(date);
+  }
+
+  function hotelSourceTags(hotel) {
+    if (hotel.match_status === "poi_only") return ["高德POI"];
+    if (hotel.match_status === "flyai_only") return ["FlyAI"];
+    if (hotel.match_status === "matched") return ["FlyAI", "高德POI"];
+    const tags = [];
+    if (hotel.poi_source === "amap") tags.push("高德POI");
+    if (hotel.price_source === "flyai") tags.push("FlyAI");
+    return tags;
+  }
+
+  function buildHotelBody(formData) {
+    const city = String(formData.get("city_name") || "").trim();
+    if (!city) throw new Error("请输入城市。");
+    const checkInValue = String(formData.get("check_in") || "");
+    const checkOutValue = String(formData.get("check_out") || "");
+    const checkIn = new Date(`${checkInValue}T00:00:00`);
+    const checkOut = new Date(`${checkOutValue}T00:00:00`);
+    const today = new Date(`${todayIso()}T00:00:00`);
+    if (!checkInValue || Number.isNaN(checkIn.getTime()) || checkIn < today) throw new Error("入住日期不得早于今天。");
+    if (!checkOutValue || Number.isNaN(checkOut.getTime())) throw new Error("离店日期格式不正确。");
+    if (checkOut <= checkIn) throw new Error("离店日期必须晚于入住日期。");
+    return { city_name: city, check_in: checkInValue, check_out: checkOutValue };
+  }
+
+  function renderHotelServiceError(message, withRetry) {
+    hotelServiceStatus.textContent = message;
+    hotelResults.replaceChildren();
+    if (withRetry) {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "btn-ghost";
+      retry.textContent = "重试";
+      retry.addEventListener("click", () => submitHotelSearch());
+      hotelResults.appendChild(retry);
+    }
+    hotelResults.hidden = false;
+  }
+
+  async function submitHotelSearch(event) {
+    if (event) event.preventDefault();
+    let body;
+    try {
+      body = buildHotelBody(new FormData(hotelForm));
+    } catch (validationError) {
+      hotelServiceStatus.textContent = documentErrorMessage(validationError, "请检查输入后重试。");
+      return;
+    }
+    hotelSubmit.disabled = true;
+    hotelServiceStatus.textContent = "正在查询酒店…";
+    hotelResults.replaceChildren();
+    hotelResults.hidden = true;
+    try {
+      const response = await fetch("/api/fliggy/hotels/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (response.status === 503) {
+        renderHotelServiceError("酒店推荐服务尚未配置，暂时无法查询。", false);
+        return;
+      }
+      if (response.status === 502) {
+        renderHotelServiceError("上游酒店查询服务暂不可用，请稍后重试。", true);
+        return;
+      }
+      if (!response.ok) throw new Error(await nonOkMessage(response));
+      const payload = await response.json();
+      renderHotelResults(payload);
+    } catch (requestError) {
+      hotelServiceStatus.textContent = `酒店查询失败：${documentErrorMessage(requestError, "请稍后重试。")}`;
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "btn-ghost";
+      retry.textContent = "重试";
+      retry.addEventListener("click", () => submitHotelSearch());
+      hotelResults.replaceChildren(retry);
+      hotelResults.hidden = false;
+    } finally {
+      hotelSubmit.disabled = false;
+    }
+  }
+
+  function renderHotelResults(payload) {
+    hotelResults.replaceChildren();
+    const hotels = Array.isArray(payload.hotels) ? payload.hotels : [];
+    if (!hotels.length) {
+      const empty = document.createElement("p");
+      empty.className = "hotel-empty";
+      empty.textContent = "未找到匹配的酒店，请调整城市或日期后重试。";
+      hotelResults.appendChild(empty);
+    }
+    hotels.forEach((hotel) => {
+      const card = document.createElement("article");
+      card.className = "hotel-card";
+      const imageUrl = hotel.flyai_main_pic;
+      if (isHttpsUrl(imageUrl)) {
+        const image = document.createElement("img");
+        image.src = imageUrl;
+        image.alt = hotel.hotel_name || "酒店图片";
+        image.loading = "lazy";
+        image.addEventListener("error", () => image.remove());
+        card.appendChild(image);
+      }
+      const title = document.createElement("h3");
+      title.textContent = hotel.hotel_name || "未命名酒店";
+      const tags = document.createElement("div");
+      tags.className = "hotel-tags";
+      hotelSourceTags(hotel).forEach((label) => {
+        const tag = document.createElement("span");
+        tag.className = `hotel-tag ${label === "FlyAI" ? "hotel-tag-flyai" : "hotel-tag-amap"}`;
+        tag.textContent = label;
+        tags.appendChild(tag);
+      });
+      const addressText = hotel.amap_address || "位置暂无匹配";
+      const address = document.createElement("p");
+      address.textContent = `地址：${addressText}`;
+      const price = document.createElement("p");
+      price.className = "hotel-price";
+      price.textContent = hotel.flyai_price == null ? "价格暂不可用" : `价格：${Number(hotel.flyai_price).toFixed(2)} 元`;
+      const meta = document.createElement("p");
+      const metaParts = [];
+      if (hotel.flyai_score != null) metaParts.push(`评分：${Number(hotel.flyai_score).toFixed(1)}`);
+      if (hotel.flyai_star != null) metaParts.push(`星级：${hotel.flyai_star} 星`);
+      meta.textContent = metaParts.length ? metaParts.join(" · ") : "暂无评分与星级信息";
+      let detailLink = null;
+      if (isHttpsUrl(hotel.detail_url)) {
+        detailLink = document.createElement("a");
+        detailLink.className = "hotel-detail-link";
+        detailLink.href = hotel.detail_url;
+        detailLink.target = "_blank";
+        detailLink.rel = "noopener noreferrer";
+        detailLink.textContent = "官方详情";
+      }
+      card.append(title, tags, address, price, meta);
+      if (detailLink) card.appendChild(detailLink);
+      hotelResults.appendChild(card);
+    });
+    const timeNote = document.createElement("p");
+    timeNote.className = "hotel-query-time";
+    const flyaiTime = payload.flyai_retrieved_at ? formatHotelTime(payload.flyai_retrieved_at) : "未知";
+    if (payload.poi_unavailable === true) {
+      timeNote.textContent = `FlyAI 查询时间：${flyaiTime} · 高德 POI 暂不可用`;
+    } else if (payload.amap_retrieved_at) {
+      timeNote.textContent = `查询时间：FlyAI ${flyaiTime} · 高德 ${formatHotelTime(payload.amap_retrieved_at)}`;
+    } else {
+      timeNote.textContent = `查询时间：FlyAI ${flyaiTime}`;
+    }
+    hotelResults.appendChild(timeNote);
+    hotelResults.hidden = false;
+  }
+
   function showView(name) {
     activeView = name;
     if (name !== "library") cancelLibraryRequests();
@@ -475,6 +646,7 @@
     if (plan) plan.classList.toggle("active", name === "plan");
     if (guide) guide.classList.toggle("active", name === "guide");
     if (ticket) ticket.classList.toggle("active", name === "ticket");
+    if (hotel) hotel.classList.toggle("active", name === "hotel");
     if (name === "ticket") loadFliggyStatus();
     if (name === "dashboard") loadDashboardStats();
     if (name === "library") loadDocuments();
@@ -1292,12 +1464,15 @@
 
   departureInput.min = todayIso();
   ticketEntryDate.min = todayIso();
+  hotelCheckIn.min = todayIso();
+  hotelCheckOut.min = todayIso();
 
   startExperienceButton.addEventListener("click", startExperience);
   backToIntroButton.addEventListener("click", showIntro);
   newPlanButton.addEventListener("click", startNewPlan);
   form.addEventListener("submit", submitPlan);
   ticketForm.addEventListener("submit", submitTicketSearch);
+  hotelForm.addEventListener("submit", submitHotelSearch);
   documentUpload.addEventListener("change", uploadDocument);
   document.getElementById("intro").setAttribute("aria-hidden", "false");
   renderNav();

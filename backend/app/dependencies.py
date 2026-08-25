@@ -12,7 +12,91 @@ from app.orchestration.sequential import SequentialTravelOrchestrator
 from app.services.amap import AmapClient
 from app.services.cache import MemoryCache
 from app.services.heweather import HeWeatherClient
+from app.services.fliggy_hotel import HotelSearchService
+from app.services.fliggy_hotel_client import FliggyHotelClient
+from app.services.flyai_hotel_client import FlyAIHotelClient
+from app.services.flyai_hotel_recommendation import FlyAIHotelRecommendationService
 from app.services.resilience import CircuitBreaker
+from app.errors import FliggyHotelNotConfigured
+
+
+class _DisabledHotelSearchService:
+    async def search(self, request, trace_id: str):
+        raise FliggyHotelNotConfigured()
+
+
+def build_hotel_search_service(settings: Settings):
+    """按配置构造飞猪酒店查询服务；未配置时不创建 HTTP 客户端。"""
+
+    credentials = (
+        settings.fliggy_hotel_app_key,
+        settings.fliggy_hotel_app_secret,
+        settings.fliggy_hotel_sub_channel,
+    )
+    if not settings.fliggy_hotel_enabled or not all(
+        isinstance(value, str) and bool(value.strip()) for value in credentials
+    ):
+        return _DisabledHotelSearchService()
+    return HotelSearchService(
+        FliggyHotelClient(
+            *credentials,
+            max_attempts=settings.external_max_attempts,
+            timeout=httpx.Timeout(
+                settings.external_total_timeout_seconds,
+                connect=settings.external_connect_timeout_seconds,
+                read=settings.external_read_timeout_seconds,
+                write=settings.external_read_timeout_seconds,
+                pool=settings.external_total_timeout_seconds,
+            ),
+            base_url=settings.fliggy_hotel_api_url,
+        )
+    )
+
+
+class _DisabledFlyAIHotelRecommendationService:
+    """FlyAI 推荐服务未启用或 Key 缺失时的安全替身，调用即抛受控错误。"""
+
+    async def recommend(self, request):
+        raise FliggyHotelNotConfigured()
+
+    async def search(self, request):
+        raise FliggyHotelNotConfigured()
+
+
+def build_flyai_hotel_recommendation_service(settings: Settings):
+    """按配置构造 FlyAI 酒店推荐服务；未配置时不创建任何会发请求的客户端。"""
+
+    if not settings.flyai_hotel_enabled or not (
+        isinstance(settings.flyai_api_key, str) and bool(settings.flyai_api_key.strip())
+    ):
+        return _DisabledFlyAIHotelRecommendationService()
+    return FlyAIHotelRecommendationService(
+        FlyAIHotelClient(
+            settings.flyai_api_key,
+            command=settings.flyai_cli_command,
+            timeout_seconds=settings.flyai_cli_timeout_seconds,
+        ),
+        AmapClient(
+            settings.amap_api_key,
+            base_url=settings.amap_base_url,
+            cache=MemoryCache(),
+            breaker=CircuitBreaker(
+                settings.circuit_breaker_failure_threshold,
+                settings.circuit_breaker_open_seconds,
+            ),
+            max_attempts=settings.external_max_attempts,
+            geocode_cache_ttl_seconds=settings.amap_geocode_cache_ttl_seconds,
+            route_cache_ttl_seconds=settings.amap_route_cache_ttl_seconds,
+            poi_cache_ttl_seconds=settings.amap_poi_cache_ttl_seconds,
+            timeout=httpx.Timeout(
+                settings.external_total_timeout_seconds,
+                connect=settings.external_connect_timeout_seconds,
+                read=settings.external_read_timeout_seconds,
+                write=settings.external_read_timeout_seconds,
+                pool=settings.external_total_timeout_seconds,
+            ),
+        ),
+    )
 
 
 def build_orchestrator(settings: Settings) -> SequentialTravelOrchestrator:
