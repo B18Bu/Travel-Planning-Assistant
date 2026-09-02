@@ -22,6 +22,7 @@ backend/data/
 .agents/
 .codex/
 skills/
+skills-lock.json
 docs/
 practice/
 *.log
