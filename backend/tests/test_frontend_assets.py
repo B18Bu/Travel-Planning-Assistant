@@ -10,6 +10,15 @@ from app.main import create_app
 FRONTEND_DIR = Path(__file__).parents[2] / "frontend"
 
 
+def test_frontend_prompts_only_the_first_missing_travel_field():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "const field = [...new Set(missing)][0]" in script
+    assert '"请补充"' in script
+    assert "throw new Error(`${prefix}${labels[field] || field}`)" in script
+    assert "以下字段是必填项或信息不明确" not in script
+
+
 def test_frontend_maps_controlled_knowledge_empty_reasons_without_exposing_backend_errors():
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
 

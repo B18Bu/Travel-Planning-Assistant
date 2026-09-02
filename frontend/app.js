@@ -272,7 +272,9 @@
       const missing = [...(parsed.missing_fields || []), ...(parsed.ambiguous_fields || [])];
       if (missing.length) {
         const labels = { origin: "始发地", destination: "目的地", departure_date: "出行日期", travelers: "出行人数", days: "出行天数" };
-        throw new Error(`以下字段是必填项或信息不明确：${[...new Set(missing)].map((field) => labels[field] || field).join("、")}`);
+        const field = [...new Set(missing)][0];
+        const prefix = (parsed.ambiguous_fields || []).includes(field) ? "请确认" : "请补充";
+        throw new Error(`${prefix}${labels[field] || field}`);
       }
       originInput.value = parsed.origin;
       destinationInput.value = parsed.destination;
