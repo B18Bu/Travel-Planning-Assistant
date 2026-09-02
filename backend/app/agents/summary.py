@@ -8,6 +8,7 @@ from app.models.travel import (
     AgentStatus,
     TravelPlanData,
     TravelPlanDocument,
+    TravelPreferenceProfile,
 )
 
 
@@ -22,6 +23,7 @@ class SummaryAgent:
         food: AgentResult,
         request_id: str,
         trace_id: str,
+        profile: TravelPreferenceProfile | None = None,
     ) -> TravelPlanDocument:
         self._validate_ids(request_id, trace_id)
         itinerary = TravelPlanData(
@@ -50,7 +52,7 @@ class SummaryAgent:
             trace_id=trace_id,
             status=status,
             itinerary=itinerary,
-            markdown=self._markdown(itinerary, warnings, degraded_agents),
+            markdown=self._markdown(itinerary, warnings, degraded_agents, profile),
             sources=sources,
             warnings=warnings,
             degraded_agents=degraded_agents,
@@ -82,7 +84,7 @@ class SummaryAgent:
         return re.sub(r"([\\`*_{}\[\]()#+.!|~-])", r"\\\1", text)
 
     @classmethod
-    def _markdown(cls, itinerary: TravelPlanData, warnings: tuple[str, ...], degraded_agents: tuple[str, ...]) -> str:
+    def _markdown(cls, itinerary: TravelPlanData, warnings: tuple[str, ...], degraded_agents: tuple[str, ...], profile: TravelPreferenceProfile | None = None) -> str:
         weather_data = itinerary.weather.data
         route_data = itinerary.route.data
         lodging_data = itinerary.lodging.data
@@ -94,6 +96,7 @@ class SummaryAgent:
             f"- 目的地：{cls._safe(weather_data.destination if weather_data else '待核验')}",
             f"- 行程天数：{len(route_data.daily_areas) if route_data else 0} 天",
             "",
+            *cls._profile_section(profile),
             "## 天气与出游风险",
         ]
         if weather_data and weather_data.daily:
@@ -196,6 +199,22 @@ class SummaryAgent:
         else:
             lines.append("- 各专业结果均已完成。")
         return "\n".join(lines)
+
+    @classmethod
+    def _profile_section(cls, profile: TravelPreferenceProfile | None) -> tuple[str, ...]:
+        if profile is None or (profile.summary is None and not profile.preferences and not profile.verification_notes):
+            return ()
+        lines = ["## 用户偏好响应"]
+        if profile.summary:
+            lines.append(f"- 用户画像：{cls._safe(profile.summary)}。")
+        lines.extend(
+            f"- {cls._safe(item.instruction)}（优先级：{cls._safe(item.priority)}）。"
+            for item in profile.preferences
+        )
+        if profile.verification_notes:
+            lines.append("- 需核验：" + "；".join(cls._safe(note) for note in profile.verification_notes) + "。")
+        lines.append("")
+        return tuple(lines)
 
     @staticmethod
     def _validate_ids(request_id: str, trace_id: str) -> None:

@@ -59,7 +59,7 @@ class SequentialTravelOrchestrator:
             request_id,
             trace_id,
         )
-        return self.summary.run(weather, route, lodging, food, request_id, trace_id)
+        return self.summary.run(weather, route, lodging, food, request_id, trace_id, request.profile)
 
     @staticmethod
     async def _safe_agent_call(
