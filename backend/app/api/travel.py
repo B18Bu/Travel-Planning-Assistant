@@ -28,10 +28,12 @@ async def create_travel_plan(
 ) -> TravelPlanDocument:
     request_id = request.state.request_id
     try:
+        original_query = payload.original_query or ""
+        planning_payload = payload.model_copy(update={"original_query": None})
         document = await request.app.state.orchestrator.run(
-            payload, request_id, trace_id=request_id
+            planning_payload, request_id, trace_id=request_id
         )
-        request.app.state.travel_plan_store.save(request.headers.get("X-Travel-Query", ""), payload, document)
+        request.app.state.travel_plan_store.save(original_query, planning_payload, document)
         return document
     except Exception as error:
         logger.exception("旅行规划执行失败")

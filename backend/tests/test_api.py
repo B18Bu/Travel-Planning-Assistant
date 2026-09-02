@@ -135,6 +135,15 @@ async def test_travel_plan_validates_payload_and_uses_request_id():
     orchestrator.run.return_value = valid_document(request_id)
     app = create_app(orchestrator=orchestrator)
 
+    class Store:
+        saved = None
+
+        def save(self, query, request, document):
+            self.saved = (query, request, document)
+
+    store = Store()
+    app.state.travel_plan_store = store
+
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="https://testserver"
     ) as client:
@@ -144,9 +153,10 @@ async def test_travel_plan_validates_payload_and_uses_request_id():
             json={
                 "origin": "上海",
                 "destination": "杭州",
-                "departure_date": "2026-09-01",
+                "departure_date": "2026-09-10",
                 "travelers": 2,
                 "days": 1,
+                "original_query": "2位成人带1个孩子，9月10日从北京到成都玩3天",
             },
         )
 
@@ -156,6 +166,8 @@ async def test_travel_plan_validates_payload_and_uses_request_id():
     orchestrator.run.assert_awaited_once_with(
         ANY, request_id, trace_id=request_id
     )
+    assert store.saved[0] == "2位成人带1个孩子，9月10日从北京到成都玩3天"
+    assert store.saved[1].original_query is None
 
 
 @pytest.mark.asyncio

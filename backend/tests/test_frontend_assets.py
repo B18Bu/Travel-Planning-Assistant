@@ -19,6 +19,13 @@ def test_frontend_prompts_only_the_first_missing_travel_field():
     assert "以下字段是必填项或信息不明确" not in script
 
 
+def test_frontend_sends_original_travel_query_in_json_body_not_headers():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "X-Travel-Query" not in script
+    assert "JSON.stringify({ ...body, original_query: queryInput.value.trim() })" in script
+
+
 def test_frontend_maps_controlled_knowledge_empty_reasons_without_exposing_backend_errors():
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
 

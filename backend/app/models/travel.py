@@ -437,6 +437,7 @@ class TravelPlanRequest(StrictModel):
     days: Annotated[int, Field(ge=1, le=14)] = 3
     budget: Annotated[int | None, Field(ge=0, le=200000)] = None
     preferences: Annotated[tuple[NonEmptyText, ...], Field(max_length=12)] = ()
+    original_query: Annotated[str | None, Field(max_length=4000)] = None
 
     @field_validator("origin", "destination", mode="before")
     @classmethod
@@ -453,6 +454,13 @@ class TravelPlanRequest(StrictModel):
         if not isinstance(value, list):
             raise ValueError("偏好必须是列表")
         return [item.strip() if isinstance(item, str) else item for item in value]
+
+    @field_validator("original_query", mode="before")
+    @classmethod
+    def normalize_original_query(cls, value: str | None) -> str | None:
+        """去除原始描述的首尾空白。"""
+
+        return value.strip() if isinstance(value, str) else value
 
     @field_validator("departure_date")
     @classmethod
