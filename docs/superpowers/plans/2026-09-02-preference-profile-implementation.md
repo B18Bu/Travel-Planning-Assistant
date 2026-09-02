@@ -14,7 +14,8 @@
 
 - 修改：`backend/app/models/travel.py`、`backend/app/models/planning.py` — 画像合同、规划请求与解析响应字段。
 - 修改：`backend/app/services/query_parser.py` — 规则识别和画像构造。
-- 修改：`backend/app/agents/route.py`、`food.py`、`lodging.py`、`summary.py` — 约束执行与可核验提示。
+- 修改：`backend/app/agents/weather.py`、`route.py`、`food.py`、`lodging.py`、`summary.py` — 画像指导、来源融合与富内容返回。
+- 修改：`backend/app/orchestration/sequential.py` — 画像完整传递与最终合规校验。
 - 修改：`backend/app/orchestration/sequential.py` — 最终合规校验与摘要入参。
 - 修改：`backend/tests/test_query_parser.py`、`test_agents_weather_route.py`、`test_summary.py`。
 - 创建：`backend/tests/test_food_preferences.py` — 餐饮硬约束回归测试。
@@ -77,6 +78,14 @@ if any(term.casefold() in text.casefold() for term in exclude_terms):
 document = self.summary_agent.run(weather, route, lodging, food, request.profile, request_id, trace_id)
 ```
 - [ ] 重跑同一命令，预期通过；提交 `feat: 在摘要中展示偏好合规信息`。
+
+### 任务 5：飞猪 AI 与高德的住宿/餐饮融合
+
+**文件：** `backend/app/agents/lodging.py`、`backend/app/agents/food.py`、`backend/app/agents/summary.py`、`backend/tests/test_flyai_hotel_recommendation.py`、`backend/tests/test_food_preferences.py`
+
+- [ ] 编写失败测试：高德与飞猪 AI 同时成功时合并真实字段；高德失败时保留飞猪候选并标记位置待核验；飞猪失败时保留高德候选并标记价格评分待核验；两侧失败时无候选。
+- [ ] 最少实现：住宿 Agent 注入既有 `FlyAIHotelRecommendationService`，以入住离店日期和画像指导查询；餐饮高德无候选时使用受控飞猪文本补充，所有返回字段保留来源与核验说明。
+- [ ] 重跑：`cd backend; pytest tests/test_flyai_hotel_recommendation.py tests/test_food_preferences.py -q`；提交 `feat: 融合飞猪与高德旅行候选`。
 
 ### 任务 5：关联验证
 
