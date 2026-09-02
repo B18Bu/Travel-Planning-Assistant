@@ -233,6 +233,9 @@ class KnowledgeSearchResponse(StrictModel):
     answer: AnswerText | None = None
     answer_status: Literal["none", "generated", "unavailable"] = "none"
     record_id: UUIDV1ToV5 | None = None
+    empty_reason: Literal[
+        "no_ready_documents", "no_region_documents", "no_matching_chunks"
+    ] | None = None
 
 
 class QueryRecord(StrictModel):

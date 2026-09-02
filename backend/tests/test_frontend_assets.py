@@ -10,6 +10,17 @@ from app.main import create_app
 FRONTEND_DIR = Path(__file__).parents[2] / "frontend"
 
 
+def test_frontend_maps_controlled_knowledge_empty_reasons_without_exposing_backend_errors():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    for reason in ("no_ready_documents", "no_region_documents", "no_matching_chunks"):
+        assert reason in script
+    assert "暂无可检索资料，请先上传文档并等待处理完成。" in script
+    assert "目标地区暂无已处理资料，请更换地区或上传相关攻略。" in script
+    assert "未找到相关内容，请尝试更具体的景点、玩法或主题关键词。" in script
+    assert "检索引擎暂时不可用，请稍后重试。" in script
+
+
 @pytest.mark.parametrize(
     "asset",
     ["index.html", "app.js", "styles.css", "vendor/marked.min.js", "vendor/purify.min.js"],

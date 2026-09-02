@@ -86,6 +86,19 @@ def test_parse_query_is_deterministic_for_multi_city_queries():
     assert parsed.city == "北京"
 
 
+def test_search_chunks_prioritizes_travel_modifier_over_generic_intent_match():
+    generic = make_chunk("成都博物馆展览介绍", document_name="成都玩法.docx")
+    family = make_chunk("成都亲子互动博物馆活动", document_name="成都玩法.docx")
+
+    hits = search_chunks(
+        [generic, family],
+        parse_query("成都适合亲子的博物馆"),
+        limit=2,
+    )
+
+    assert [hit.chunk_id for hit in hits] == [UUID(str(family.id)), UUID(str(generic.id))]
+
+
 # ---- city_from_document_name ----
 
 def test_city_from_document_name_extracts_city_from_filename():

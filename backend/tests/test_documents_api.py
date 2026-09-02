@@ -685,3 +685,71 @@ async def test_knowledge_search_records_and_returns_the_normalized_query(tmp_pat
         )
 
     assert response.json()["query"] == "成都亲子游"
+
+
+@pytest.mark.asyncio
+async def test_knowledge_search_deduplicates_whitespace_equivalent_chunks(tmp_path):
+    from app.services.chroma_store import ChromaSearchHit
+
+    app, record, chunk, chroma = app_with_documents(tmp_path)
+    primary = chunk.model_copy(update={"content": "成都 亲子游 攻略"})
+    duplicate = chunk.model_copy(update={"id": str(uuid4()), "content": "成都\n亲子游  攻略"})
+    distinct = chunk.model_copy(
+        update={"id": str(uuid4()), "content": "成都室内亲子场所攻略", "source_page": 3}
+    )
+    ready = app.state.document_store.get_document(record.id).model_copy(
+        update={"chunk_count": 3, "text_chunk_count": 3}
+    )
+    app.state.document_store.save_processed_document(ready, [primary, duplicate, distinct])
+    chroma.hits = tuple(
+        ChromaSearchHit(chunk_id=item.id, document_id=record.id, score=0.9 - index * 0.1)
+        for index, item in enumerate([primary, duplicate, distinct])
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
+        response = await client.post("/api/knowledge-search", json={"query": "成都亲子游", "document_ids": []})
+
+    assert response.status_code == 200
+    assert [item["content"] for item in response.json()["results"]] == [
+        "成都 亲子游 攻略",
+        "成都室内亲子场所攻略",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "reason"),
+    [
+        ("三亚亲子游", "no_region_documents"),
+        ("成都夜游", "no_matching_chunks"),
+    ],
+)
+async def test_knowledge_search_returns_controlled_empty_reason_for_ready_documents(
+    tmp_path, query, reason
+):
+    app, _record, _chunk, chroma = app_with_documents(tmp_path)
+    chroma.hits = ()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
+        response = await client.post("/api/knowledge-search", json={"query": query, "document_ids": []})
+
+    assert response.status_code == 200
+    assert response.json()["results"] == []
+    assert response.json()["empty_reason"] == reason
+
+
+@pytest.mark.asyncio
+async def test_knowledge_search_returns_no_ready_documents_reason(tmp_path):
+    app = create_app(
+        settings=Settings(_env_file=None),
+        document_store=DocumentStore(tmp_path),
+        document_processor=FakeProcessor(),
+        chroma_store=FakeChroma(),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
+        response = await client.post("/api/knowledge-search", json={"query": "成都亲子游", "document_ids": []})
+
+    assert response.status_code == 200
+    assert response.json()["results"] == []
+    assert response.json()["empty_reason"] == "no_ready_documents"

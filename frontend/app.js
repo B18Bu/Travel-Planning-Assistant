@@ -1098,11 +1098,17 @@
     }
   }
 
-  function renderKnowledgeResults(results) {
+  const knowledgeEmptyMessages = {
+    no_ready_documents: "暂无可检索资料，请先上传文档并等待处理完成。",
+    no_region_documents: "目标地区暂无已处理资料，请更换地区或上传相关攻略。",
+    no_matching_chunks: "未找到相关内容，请尝试更具体的景点、玩法或主题关键词。",
+  };
+
+  function renderKnowledgeResults(results, emptyReason = null) {
     knowledgeResults.replaceChildren();
     if (!results.length) {
       const empty = document.createElement("p");
-      empty.textContent = "未找到匹配的已处理文档内容。";
+      empty.textContent = knowledgeEmptyMessages[emptyReason] || knowledgeEmptyMessages.no_matching_chunks;
       knowledgeResults.appendChild(empty);
     }
     results.forEach((item) => {
@@ -1514,7 +1520,10 @@
       if (!response.ok) throw new Error(await nonOkMessage(response));
       const payload = await response.json();
       if (generation !== knowledgeRequestGeneration || activeView !== "guide") return;
-      renderKnowledgeResults(Array.isArray(payload.results) ? payload.results : []);
+      renderKnowledgeResults(
+        Array.isArray(payload.results) ? payload.results : [],
+        typeof payload.empty_reason === "string" ? payload.empty_reason : null,
+      );
       if (Array.isArray(payload.results) && payload.results.length) {
         const task = {
           id: payload.record_id || `k${++sequence}`,
@@ -1546,7 +1555,7 @@
       if (generation !== knowledgeRequestGeneration || activeView !== "guide") return;
       knowledgeResults.replaceChildren();
       const message = document.createElement("p");
-      message.textContent = `知识检索服务不可用：${documentErrorMessage(requestError, "请稍后重试。")}`;
+      message.textContent = "检索引擎暂时不可用，请稍后重试。";
       knowledgeResults.appendChild(message);
     }
   }

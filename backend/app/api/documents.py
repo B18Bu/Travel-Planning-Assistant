@@ -44,6 +44,40 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=404, detail="文档不存在")
 
 
+def _normalized_chunk_content(content: str) -> str:
+    return " ".join(content.split()).casefold()
+
+
+def _deduplicate_ranked_hits(ranked, chunks_by_id, limit: int):
+    selected = []
+    seen = set()
+    for hit in ranked:
+        chunk = chunks_by_id.get(hit.chunk_id)
+        if chunk is None:
+            continue
+        fingerprint = _normalized_chunk_content(chunk.content)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        selected.append(hit)
+        if len(selected) == limit:
+            break
+    return tuple(selected)
+
+
+def _empty_reason(ready_records, query_region: str | None, results) -> str | None:
+    if results:
+        return None
+    if not ready_records:
+        return "no_ready_documents"
+    if query_region is not None and not any(
+        region_from_document_name(record.filename) == query_region
+        for record in ready_records
+    ):
+        return "no_region_documents"
+    return "no_matching_chunks"
+
+
 def _valid_signature(content: bytes, media_type: str) -> bool:
     if media_type == PDF_MEDIA_TYPE:
         return content.startswith(b"%PDF-")
@@ -246,18 +280,19 @@ async def search_knowledge(payload: KnowledgeSearchRequest, request: Request) ->
             limit=fetch_limit,
         )
         parsed = parse_query(query)
-        ready_records = await asyncio.to_thread(store.list_documents)
+        records = await asyncio.to_thread(store.list_documents)
         if payload.document_ids:
             wanted = {str(document_id) for document_id in payload.document_ids}
-            ready_ids = {
-                record.id for record in ready_records
+            ready_records = [
+                record for record in records
                 if record.status is DocumentStatus.ready and str(record.id) in wanted
-            }
+            ]
         else:
-            ready_ids = {
-                record.id for record in ready_records
+            ready_records = [
+                record for record in records
                 if record.status is DocumentStatus.ready
-            }
+            ]
+        ready_ids = {record.id for record in ready_records}
         indexed = await asyncio.to_thread(store.get_documents_with_chunks, ready_ids)
         chunks_by_id = {
             UUID(str(chunk.id)): chunk
@@ -276,8 +311,9 @@ async def search_knowledge(payload: KnowledgeSearchRequest, request: Request) ->
                 if chunk_id in chunks_by_id else None
             ),
             query_region=parsed.region,
-            limit=result_limit,
+            limit=fetch_limit,
         )
+        ranked = _deduplicate_ranked_hits(ranked, chunks_by_id, result_limit)
     except (ExternalServiceUnavailable, RuntimeError, ValueError):
         raise HTTPException(status_code=503, detail="知识检索服务暂不可用") from None
 
@@ -338,6 +374,7 @@ async def search_knowledge(payload: KnowledgeSearchRequest, request: Request) ->
     return KnowledgeSearchResponse(
         query=query, results=tuple(results), answer=answer,
         answer_status=answer_status, record_id=record_id,
+        empty_reason=_empty_reason(ready_records, parsed.region, results),
     )
 
 

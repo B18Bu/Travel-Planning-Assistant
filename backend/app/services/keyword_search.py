@@ -230,6 +230,11 @@ INTENT_KEYWORDS = {
 # 去除后不参与关键词计分的高频词；城市名与「市」后缀单独处理。
 STOPWORDS = ("推荐", "一下", "怎么样", "请问", "我想", "要去", "哪些", "吗", "呢", "吧")
 
+TRAVEL_MODIFIERS = (
+    "亲子", "儿童", "老人", "情侣", "室内", "雨天", "避暑", "慢游",
+    "自驾", "徒步", "夜游", "摄影", "露营", "文化", "历史",
+)
+
 
 @dataclass(frozen=True)
 class ParsedQuery:
@@ -419,7 +424,9 @@ def _significant_terms(query: str, city: str | None) -> tuple[str, ...]:
         cleaned = cleaned[:-1]
     for stopword in STOPWORDS:
         cleaned = cleaned.replace(stopword, "")
-    return tuple(re.findall(r"[一-鿿]+", cleaned))
+    modifiers = [modifier for modifier in TRAVEL_MODIFIERS if modifier in cleaned]
+    raw_terms = re.findall(r"[一-鿿]+", cleaned)
+    return tuple(dict.fromkeys((*modifiers, *raw_terms)))
 
 
 def _score_chunk(chunk: DocumentChunk, parsed: ParsedQuery) -> float:
