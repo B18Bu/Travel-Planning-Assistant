@@ -662,3 +662,11 @@ def test_frontend_saved_plans_require_selection_before_revision_and_offer_deleti
     assert 'method: "DELETE"' in script
     revision_block = script[script.index("async function submitPlanRevision"):script.index("function renderNav")]
     assert 'showView("task")' not in revision_block
+
+
+def test_saved_plan_management_uses_flat_rows_instead_of_white_cards():
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert ".plan-management-page .saved-plan-item { background: transparent; border: 0;" in styles
+    assert ".plan-management-page .plan-revision-panel { background: transparent; border: 0;" in styles
+    assert "border-left: 3px solid var(--accent);" in styles
