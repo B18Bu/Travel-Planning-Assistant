@@ -18,10 +18,11 @@
         <button id="start-experience" class="intro-btn" type="button">开始体验</button>
         <div class="intro-features">
           <div class="intro-feature">🧭 <b>完整规划</b> — 从出发地到目的地的 AI 完整方案</div>
-          <div class="intro-feature">🔍 <b>目的地攻略</b> — 知识库检索，内容来源可溯源</div>
+          <div class="intro-feature">🔍 <b>知识融合规划</b> — 已收录内容与实时 Agent 共同生成</div>
           <div class="intro-feature">📊 <b>数据看板</b> — 赞踩反馈，用数据优化内容</div>
         </div>
         <div class="intro-note">界面原型 · 演示数据</div>
+        <!-- 数字人讲解占位：暂不作为行程规划入口。 -->
       </section>
       <aside class="intro-visual" aria-label="从出发到发现的智能旅行航迹">
         <div class="intro-route-glow"></div>
@@ -68,7 +69,7 @@
         </div>
       </div>
 
-      <div class="side-section"><div class="side-label">功能</div><button class="side-nav" id="nav-plan" onclick="showView('plan')"><span>🧭</span> 行程规划</button><button class="side-nav" id="nav-guide" onclick="showView('guide')"><span>🔎</span> 攻略查询</button><button class="side-nav" id="nav-ticket" onclick="showView('ticket')"><span>🎟️</span> 门票查询</button><button class="side-nav" id="nav-hotel" onclick="showView('hotel')"><span>🏨</span> 酒店推荐</button></div>
+      <div class="side-section"><div class="side-label">功能</div><button class="side-nav" id="nav-plan" onclick="showView('plan')"><span>🧭</span> 行程规划</button><button class="side-nav" id="nav-plans" onclick="showView('plans')"><span>🗂️</span> 方案制定</button><button class="side-nav" id="nav-ticket" onclick="showView('ticket')"><span>🎟️</span> 门票查询</button><button class="side-nav" id="nav-hotel" onclick="showView('hotel')"><span>🏨</span> 酒店推荐</button></div>
 
       <div class="side-section">
         <div class="side-label">管理</div>
@@ -135,73 +136,18 @@
             </div>
             <div class="feature-action">
               <form class="route-form" id="travel-form">
-                <div class="route-fields">
-                  <input id="home-origin" name="origin" placeholder="始发地，如：北京" required maxlength="100">
-                  <span class="route-arrow">→</span>
-                  <input id="home-dest" name="destination" placeholder="目的地，如：成都" required maxlength="100">
-                </div>
-                <div class="travel-extra-fields">
-                  <label>出行日期<input id="home-date" name="departure_date" type="date" required></label>
-                  <label>出行人数<input id="home-travelers" name="travelers" type="number" min="1" max="20" value="1" required></label>
-                  <label>出行天数<input id="home-days" name="days" type="number" min="1" max="14" value="3" required></label>
-                  <label>预算（元）<input id="home-budget" name="budget" type="number" min="0" max="200000"></label>
-                  <label class="travel-preferences">偏好（用逗号分隔）<input id="home-preferences" name="preferences" maxlength="600" placeholder="例如：亲子, 美食"></label>
-                </div>
+                <label class="query-label">描述你的旅行需求<textarea id="home-query" name="query" rows="6" maxlength="4000" required placeholder="例如：两位成人带一个孩子，9月10日从上海去成都玩5天，不吃辣，节奏不要太赶"></textarea></label>
+                <input id="home-origin" name="origin" type="hidden">
+                <input id="home-dest" name="destination" type="hidden">
+                <input id="home-date" name="departure_date" type="hidden">
+                <input id="home-travelers" name="travelers" type="hidden">
+                <input id="home-days" name="days" type="hidden">
+                <input id="home-budget" name="budget" type="hidden">
+                <input id="home-preferences" name="preferences" type="hidden">
                 <p id="home-status" class="home-status" role="status" aria-live="polite"></p>
                 <p id="home-error" class="home-error" role="alert" hidden></p>
-                <button class="btn-primary btn-block" type="submit">生成方案</button>
+                <button class="btn-primary btn-block" type="submit">解析并生成方案</button>
               </form>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="view-guide" class="view">
-        <div class="feature-page">
-          <div class="home-welcome">
-            <div class="home-eyebrow">企业级智能文旅工作台</div>
-            <h2>欢迎使用智能文旅策划助手</h2>
-            <p>统一入口承载出行规划、数字人服务与目的地知识检索</p>
-          </div>
-          <div class="feature-page-head">
-            <div>Knowledge Search</div>
-            <h2>攻略查询</h2>
-            <p>检索已收录目的地攻略，查看景点、美食与行程来源。</p>
-          </div>
-          <div class="feature-split feature-split-guide">
-            <div class="feature-visual">
-              <div class="digital-human-card">
-                <div class="avatar-orbit">
-                  <div class="avatar-core">数字人</div>
-                  <div class="waveform" aria-hidden="true">
-                    <span></span><span></span><span></span><span></span><span></span>
-                  </div>
-                </div>
-                <div>
-                  <!-- VISUAL ANCHOR · PLACEHOLDER -->
-                  <div class="visual-anchor">数字人模型接入预留区</div>
-                  <div class="zone-kicker">Virtual Guide</div>
-                  <h3>数字人讲解占位</h3>
-                  <p>用于接入景区讲解、问答陪伴与多模态导览能力。</p>
-                </div>
-              </div>
-            </div>
-            <div class="feature-action">
-              <div class="search-card">
-                <div class="zone-head">
-                  <div class="zone-kicker">Knowledge Search</div>
-                  <h3>自定义搜索</h3>
-                  <p>检索已收录目的地攻略，查看景点、美食与行程来源。</p>
-                </div>
-                <div class="search-form">
-                  <input id="home-region-input" placeholder="地区名，如：成都" onkeydown="if(event.key==='Enter')homeRegion()">
-                  <button class="btn-primary" onclick="homeRegion()">查攻略</button>
-                </div>
-              </div>
-              <section class="knowledge-panel">
-                <p class="search-scope">📚 检索范围：全部已处理文档 · 可在“文档库”管理</p>
-                <div id="knowledge-results" class="knowledge-results" hidden></div>
-              </section>
             </div>
           </div>
         </div>
@@ -259,6 +205,9 @@
       </section>
 
       <!-- 任务结果视图 -->
+      <section id="view-plans" class="view">
+        <div class="feature-page"><div class="feature-page-head"><div>Saved Plans</div><h2>方案制定</h2><p>选择已保存的方案，并通过 AI 客服提出修改要求。</p></div><div id="saved-plans" class="saved-plans"><p>暂无已保存方案。</p></div><textarea id="plan-revision-query" rows="3" maxlength="2000" placeholder="输入希望修改的内容"></textarea><button id="plan-revision-submit" class="btn-primary" type="button">提交修改</button></div>
+      </section>
       <section id="view-task" class="view"></section>
 
       <!-- 文档库 -->
@@ -272,6 +221,10 @@
           <label class="library-upload"><input id="document-upload" type="file" accept=".docx,.pdf,application/pdf" multiple hidden>上传文档</label>
         </div>
         <p id="library-status" role="status" aria-live="polite"></p>
+        <p class="search-scope">检索范围：全部已处理文档 · 由行程规划内部使用</p>
+        <div id="knowledge-results" hidden></div>
+        <div class="search-card"></div>
+        <section class="knowledge-panel"></section>
         <section id="library-detail" class="library-detail" hidden></section>
         <div id="library-list" class="library-list"></div>
       </section>

@@ -44,30 +44,7 @@ class DeepSeekClient:
         self._require_key()
         token = self.breaker.ensure_available()
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await request_with_retry(
-                    lambda: client.post(
-                        f"{self._base_url}/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {self.api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "model": self.model,
-                            "messages": [
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt},
-                            ],
-                            "temperature": 0.2,
-                            "max_tokens": self.max_tokens,
-                        },
-                    ),
-                    max_attempts=self.max_attempts,
-                )
-                if not 200 <= response.status_code < 300:
-                    raise ExternalServiceUnavailable("DeepSeek 未返回有效数据")
-                payload = response.json()
-            content = self._parse_content(payload)
+            content = await self._completion_with_parse_retry(system_prompt, user_prompt)
         except ExternalServiceUnavailable:
             self.breaker.record_failure(token)
             raise
@@ -76,6 +53,56 @@ class DeepSeekClient:
             raise ExternalServiceUnavailable("DeepSeek 未返回有效数据") from None
         self.breaker.record_success(token)
         return content
+
+    async def _completion_with_parse_retry(self, system_prompt: str, user_prompt: str) -> str:
+        """发送补全请求并解析；content 为空或过短时（推理模型偶发发散）重试一次。"""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            payload = await self._request_completion(client, system_prompt, user_prompt)
+            try:
+                return self._parse_content(payload)
+            except ValueError:
+                if not self._is_parse_retryable(payload):
+                    raise
+            payload = await self._request_completion(client, system_prompt, user_prompt)
+            return self._parse_content(payload)
+
+    async def _request_completion(
+        self, client: httpx.AsyncClient, system_prompt: str, user_prompt: str
+    ) -> object:
+        response = await request_with_retry(
+            lambda: client.post(
+                f"{self._base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": self.max_tokens,
+                },
+            ),
+            max_attempts=self.max_attempts,
+        )
+        if not 200 <= response.status_code < 300:
+            raise ExternalServiceUnavailable("DeepSeek 未返回有效数据")
+        return response.json()
+
+    @staticmethod
+    def _is_parse_retryable(payload: object) -> bool:
+        """响应结构完整且 content 为字符串时允许重试（针对推理模型偶发 content 空/过短）。"""
+        if not isinstance(payload, dict):
+            return False
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            return False
+        message = choices[0].get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        return isinstance(content, str)
 
     def _require_key(self) -> None:
         if not isinstance(self.api_key, str) or not self.api_key.strip():

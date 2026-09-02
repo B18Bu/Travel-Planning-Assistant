@@ -86,25 +86,46 @@ async def test_exhausted_retries_raise_and_record_breaker_failure():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_raises_when_choices_missing():
-    respx.post(f"{BASE}/chat/completions").mock(return_value=httpx.Response(200, json={"unexpected": True}))
-
-    with pytest.raises(ExternalServiceUnavailable):
-        await client().chat_completion("s", "u")
-
-
-@respx.mock
-@pytest.mark.asyncio
-async def test_raises_when_content_empty_or_too_short():
-    route = respx.post(f"{BASE}/chat/completions").mock(return_value=completion_response("   "))
+async def test_raises_when_choices_missing_without_retry():
+    # 响应结构异常（choices 缺失）是确定性错误，重试无意义，只调用一次。
+    route = respx.post(f"{BASE}/chat/completions").mock(return_value=httpx.Response(200, json={"unexpected": True}))
 
     with pytest.raises(ExternalServiceUnavailable):
         await client().chat_completion("s", "u")
     assert route.call_count == 1
 
-    respx.post(f"{BASE}/chat/completions").mock(return_value=completion_response("太短"))
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_retries_once_when_content_empty_then_succeeds():
+    # 推理模型偶发发散导致 content 为空，重试一次后恢复正常。
+    route = respx.post(f"{BASE}/chat/completions").mock(
+        side_effect=[
+            completion_response("   "),
+            completion_response(LONG_ANSWER),
+        ]
+    )
+
+    result = await client().chat_completion("s", "u")
+
+    assert route.call_count == 2
+    assert result == LONG_ANSWER
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_raises_when_content_empty_or_too_short_after_retry():
+    # content 连续两次无效（空/过短），重试一次后仍失败。
+    route = respx.post(f"{BASE}/chat/completions").mock(
+        side_effect=[
+            completion_response("   "),
+            completion_response("太短"),
+        ]
+    )
+
     with pytest.raises(ExternalServiceUnavailable):
         await client().chat_completion("s", "u")
+    assert route.call_count == 2
 
 
 @respx.mock

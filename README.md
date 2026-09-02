@@ -1,190 +1,223 @@
 # 智能文旅策划助手
 
-面向企业内部旅行规划场景的只读式行程建议服务。系统将天气、地图路线、住宿区域、餐饮 POI 汇聚为可追溯的结构化结果，并在同源前端渲染为包含时段、提醒和午晚餐建议的可核验 Markdown 行程。
+面向企业内部的**只读式文旅规划服务**：输入出发地、目的地、日期与人数，系统按「天气 → 路线 → 住宿 → 餐饮 → 汇总」的固定链路，汇聚天气、地图路线、住宿区域、餐饮 POI 与自建攻略知识库，生成**可追溯、可降级、不编造**的结构化行程。
 
-> 当前版本是 MVP：只提供建议与核验提示，不执行预订、支付或任何交易。
+> 当前版本是 **MVP**：只提供建议与核验提示，**不执行预订、支付或任何交易**。
+
+![语言](https://img.shields.io/badge/语言-简体中文-blue) ![后端](https://img.shields.io/badge/后端-FastAPI%20%2F%20Python%203.12-brightgreen) ![前端](https://img.shields.io/badge/前端-原生%20HTML%2FJS-orange) ![状态](https://img.shields.io/badge/状态-MVP-yellow)
+
+---
 
 ## 目录
 
+- [功能特性](#功能特性)
 - [项目背景与目标](#项目背景与目标)
-- [范围与非目标](#范围与非目标)
-- [用户流程与总体架构](#用户流程与总体架构)
-- [模块职责与数据流](#模块职责与数据流)
-- [企业 API 来源](#企业-api-来源)
-- [数据合同与安全边界](#数据合同与安全边界)
-- [酒店查询与推荐](#酒店查询与推荐)
-- [配置](#配置)
-- [本地启动](#本地启动)
-- [API 使用](#api-使用)
-- [前端安全与页面](#前端安全与页面)
-- [缓存、重试与熔断](#缓存重试与熔断)
-- [测试与质量门禁](#测试与质量门禁)
-- [常见故障排查](#常见故障排查)
+- [总体架构](#总体架构)
+- [功能模块说明](#功能模块说明)
+  - [行程规划（核心链路）](#1-行程规划核心链路)
+  - [攻略查询（文档知识库）](#2-攻略查询文档知识库)
+  - [门票查询](#3-门票查询)
+  - [酒店推荐](#4-酒店推荐)
+  - [数据看板](#5-数据看板)
+- [快速开始](#快速开始)
+- [配置说明](#配置说明)
+- [API 文档](#api-文档)
+- [核心概念：数据合同与状态](#核心概念数据合同与状态)
+- [容错设计](#容错设计)
+- [安全设计](#安全设计)
+- [测试与质量](#测试与质量)
+- [目录结构](#目录结构)
 - [部署与打包](#部署与打包)
-- [生产化后续](#生产化后续)
+- [常见问题排查](#常见问题排查)
+- [文档索引](#文档索引)
+- [已知限制与路线图](#已知限制与路线图)
+
+---
+
+## 功能特性
+
+| 功能 | 说明 | 状态 |
+| --- | --- | --- |
+| 行程规划 | 天气 → 路线 → 住宿 → 餐饮 → 汇总 五步链路，生成含时段、提醒、午晚餐建议的可核验 Markdown 行程 | ✅ 核心已实现 |
+| 攻略查询 | 上传 PDF/DOCX 攻略，语义 + 关键词双通道检索，DeepSeek 生成带来源的回答 | ✅ 已实现 |
+| 文档库 | 批量上传、解析（PDF/DOCX + 图表 OCR）、切块、向量化入库、来源可溯源 | ✅ 已实现 |
+| 数据看板 | 检索结果「有用 / 没用」反馈聚合，按文档与地区统计好评率 | ✅ 已实现 |
+| 门票查询 | 飞猪 FlyAI 只读文本检索，返回门票摘要（不含实时价格库存） | 🚧 筹备态，默认关闭 |
+| 酒店推荐 | 飞猪 TOP 低价查询（企业）+ FlyAI 酒店与高德 POI 并列推荐（个人） | 🚧 筹备态，默认关闭 |
+
+**核心价值**：每条事实都有来源、时间和数据状态；任何外部服务失败都能降级而非崩溃；大模型只做整理与判断，绝不当事实来源。
+
+---
 
 ## 项目背景与目标
 
 旅行规划需要同时处理日期、活动区域、天气风险、路线估算和餐饮住宿候选。若各模块直接传递自由字典，容易出现字段漂移、来源时间混淆、上游原始错误泄露和降级状态不一致。
 
-本项目的目标是：
+**项目目标：**
 
-1. 以强类型数据合同连接天气、路线、住宿、餐饮、汇总和 API。
-2. 通过 `request_id` 和 `trace_id` 贯穿一次请求，便于日志关联和问题定位。
-3. 清晰区分实时数据、进程内缓存数据和降级结果，要求用户对关键事实进行复核。
-4. 以同源、双栏页面展示行程正文与待核验事项，不把供应商原始响应直接暴露给浏览器。
-5. 以服务端密钥、固定供应商域名、受控超时、重试和熔断建立最小安全边界。
+1. 以强类型数据合同连接天气、路线、住宿、餐饮、汇总与 API。
+2. 通过 `request_id`（请求标识）与 `trace_id`（追踪标识）贯穿一次请求，便于日志关联与问题定位。
+3. 清晰区分实时数据、进程内缓存与降级结果，要求用户对关键事实复核。
+4. 以同源、**双栏**页面展示行程正文与待核验事项，不把供应商原始响应直接暴露给浏览器。
+5. 以服务端密钥、固定供应商域名、受控超时、重试与熔断建立最小安全边界。
 
-## 范围与非目标
+本项目遵循 `docs/项目宪法.md` 的硬性约束：
 
-### 本轮包含
+1. **不编造事实**：实时信息一律来自受控 API；拿不到就明确标注「暂不可用 / 待核验」，绝不用模型补造。
+2. **禁止交易字段**：价格、库存、可订状态、评分、排队时长等字段被数据模型直接拒绝。
+3. **模型不能成为事实来源**：大模型只用于归纳、解释、起草等判断类任务。
+4. **失败必须显式暴露**：任何模块失败都要在最终文档中说明。
+5. **全程可追溯**：每次请求贯穿 `request_id` 与 `trace_id`，每条数据记录来源与时间。
 
-- FastAPI 服务和同源静态前端。
-- `TravelPlanRequest`、来源、专业 Agent 结果和 `TravelPlanDocument` 数据合同。
-- 天气、驾车路线、住宿区域、餐饮 POI 的只读建议。
-- 天气 Agent、路线 Agent、住宿 Agent、餐饮 Agent、汇总 Agent 和顺序编排器。
-- 和风天气与高德地图的受控 HTTP 客户端，以及进程内缓存、瞬时错误重试和熔断。
-- `/api/health`、`/api/ready`、`/api/travel-plans` 和默认关闭的 `/api/fliggy/tickets/search`。
-- 工作台保留“门票查询”入口；通过 `FLIGGY_TICKET_PROVIDER=disabled|mock|flyai` 选择服务，默认 `disabled`（不请求飞猪、不显示模拟价格或库存）。`mock` 返回明确标注的本地演示数据；`flyai` 通过飞猪 AI 开放平台（FlyAI）`ai-search` 只读文本检索返回门票摘要（`data_status=flyai_text`），价格/库存固定显示“信息暂不可用”，不从自然语言猜测实时交易字段。三种 provider 都不创建订单、不处理支付。
-- 酒店只读查询与推荐：默认关闭的飞猪 TOP 酒店低价查询，以及 FlyAI 酒店 + 高德住宿 POI 的并列推荐；两者都只读展示，不创建订单、不处理支付。
+### 用户流程
 
-### 非目标与明确不接入
+用户在浏览器填写出发地、目的地、出行日期、人数、天数、预算与偏好；服务端校验请求后按固定顺序运行专业 Agent，最终返回结构化行程与 Markdown；前端只渲染净化后的 Markdown 与来源、警告、降级信息。
 
-本轮不接入知识库、OTA（在线旅行代理平台）、酒店或餐厅交易、预订、支付、库存、优惠、排队和订单链接。门票查询当前仅为默认关闭的筹备入口；后续仅在飞猪书面授权、字段展示许可和安全验收完成后开放只读商品、指定日期价格/库存与入园规则查询，仍不创建订单、不处理支付、不收集游客身份信息。酒店查询同样保持只读边界：飞猪 TOP 低价接口与 FlyAI 酒店搜索只返回展示字段和官方详情跳转，不在本系统内下单或支付，也不承诺实时库存或可预订状态。模型使用 `extra="forbid"` 拒绝未声明字段，禁止把上述信息通过自由字段带入结果。密钥不提交，真实密钥也不进入文档示例。
+### 范围与非目标
 
-## 用户流程与总体架构
+**包含**：行程规划、攻略查询（文档知识库）、文档库、数据看板，以及默认关闭的门票查询与酒店推荐；系统只提供建议与核验提示，**不执行预订、支付或任何交易**。
 
-用户在浏览器填写出发地、目的地、出行日期、人数、天数、预算和偏好。服务端校验请求后按固定顺序运行专业 Agent，最终返回结构化行程和 Markdown；前端只渲染净化后的 Markdown 与来源、警告、降级信息。
+**不包含**：知识库内容运营后台、OTA（在线旅行代理）交易、酒店或餐厅交易、预订、支付、库存、优惠、排队与订单链接。门票与酒店查询保持只读边界，不收集游客身份信息；模型使用 `extra="forbid"` 拒绝未声明字段，禁止把禁止字段通过自由字段带入结果。密钥不提交到版本控制，真实密钥不进入文档示例。
+
+---
+
+## 总体架构
 
 ```text
-[浏览器双栏页面]
-        │  POST /api/travel-plans（同源 JSON）
-        ▼
+[浏览器工作台页面]
+      │  POST /api/travel-plans（同源 JSON）
+      ▼
 [FastAPI API 层] ── 请求校验、UUID、错误隐藏、安全响应头
-        │
-        ▼
+      │
+      ▼
 [顺序编排器 SequentialTravelOrchestrator]
-        │  1 天气 → 2 路线 → 3 住宿 → 4 餐饮 → 5 汇总
-        ├──────────────┬───────────────┐
-        ▼              ▼               ▼
-[和风天气客户端]  [高德地图客户端]  [领域数据合同]
-  /v7/weather/15d  地理编码/驾车/POI  Pydantic v2
-        │              │               │
-        └────── 受控重试、缓存、熔断 ────┘
+      │  1 天气 → 2 路线 → 3 住宿 → 4 餐饮 → 5 汇总
+      ├──────────────┬───────────────┬───────────────┐
+      ▼              ▼               ▼               ▼
+[和风天气客户端]  [高德地图客户端]  [文档知识库]   [飞猪 / FlyAI]
+ /v7/weather/15d  地理编码/驾车/POI  PDF/DOCX→向量→检索  门票 / 酒店 / 酒店推荐
+      │              │               │
+      └────── 受控重试、缓存、熔断、降级 ──────┘
                        │
                        ▼
              [TravelPlanDocument]
        itinerary + markdown + sources + warnings
 ```
 
-## 模块职责与数据流
+- **前端**：原生 HTML/JavaScript 工作台，由后端同源托管，只调用相对路径 API。
+- **后端**：FastAPI + Pydantic 强类型数据合同，按固定顺序编排专业 Agent。
+- **外部数据**：和风天气、高德地图、飞猪 FlyAI / TOP、DeepSeek、Qwen-VL、本地 BGE + Chroma。
 
-| 模块 | 主要职责 | 输入 → 输出 |
+外部数据源端点（固定 HTTPS 域名，只读 GET）：
+
+| 数据源 | 端点 | 用途与关键参数 |
 | --- | --- | --- |
-| `backend/app/api/travel.py` | 定义旅行规划接口，读取中间件生成的请求标识，隐藏未预期异常 | JSON 请求 → `TravelPlanDocument` |
-| `backend/app/main.py` | 创建 FastAPI 应用，挂载安全中间件、CORS、健康检查和前端静态目录 | `Settings` → 可运行应用 |
-| `backend/app/models/travel.py` | 封闭字段、边界、状态一致性、来源时间和 UUID 合同 | 请求与 Agent 结果 → 不可变模型 |
-| `backend/app/services/heweather.py` | 调用和风天气逐日预报并规范化天气字段 | 地点编码、日期、天数 → `DailyWeather` 来源结果 |
-| `backend/app/services/amap.py` | 调用高德地理编码、驾车路线和文本 POI 并规范化字段 | 地点/坐标/关键词 → 地点、路线、POI |
-| `backend/app/agents/weather.py` | 根据天气生成风险等级、活动约束和天气结果 | 请求 + 天气客户端 → 天气 Agent 结果 |
-| `backend/app/agents/route.py` | 按天气风险选择风景名胜或室内文化场所，生成上午、下午、傍晚景区行程、约 120 分钟建议时长和景区间驾车预估 | 请求 + 天气结果 → 路线 Agent 结果 |
-| `backend/app/agents/lodging.py` | 按推荐活动区域查询住宿服务 POI，只输出位置和筛选建议 | 请求 + 每日区域 → 住宿 Agent 结果 |
-| `backend/app/agents/food.py` | 按上午景区提供午餐、按傍晚景区（缺失时回退下午景区）提供晚餐，查询景区附近餐饮 POI 并提取推荐菜品；保留无结果日期 | 请求 + 每日景区行程 → 餐饮 Agent 结果 |
-| `backend/app/agents/summary.py` | 聚合四个结果，去重来源、拼接警告、确定顶层状态并生成 Markdown | 四个 Agent 结果 → 最终文档 |
-| `backend/app/orchestration/sequential.py` | 固定天气 → 路线 → 住宿 → 餐饮 → 汇总顺序；单个 Agent 异常转为受控失败 | 请求 → 最终文档 |
-| `frontend/app.js` | 校验表单、调用相对路径 API、显示用户可读错误和净化 Markdown | 表单 → 页面结果 |
+| 和风天气 | `GET /v7/weather/15d` | 逐日预报，参数 `location`、`key` |
+| 高德地图 | `GET /v3/geocode/geo` | 地理编码（地名 → 经纬度），参数 `address`、`key` |
+| 高德地图 | `GET /v3/direction/driving` | 驾车路线，参数 `origin`、`destination`、`key` |
+| 高德地图 | `GET /v5/place/text` | 文本 POI 搜索，参数 `keywords`、`region`、`city_limit=true`、`key` |
+| 高德地图 | `GET /v5/place/around` | 附近 POI 搜索，参数 `keywords`、`location`、`radius=2000`、`key` |
 
-数据流中的 `itinerary` 是唯一机器可消费的事实载体；`markdown` 是汇总 Agent 根据 `itinerary` 生成的阅读表现层，不能反向解析为事实。
+数据流中的 `itinerary` 是唯一机器可消费的事实载体；`markdown` 是汇总 Agent 根据 `itinerary` 生成的阅读表现层，**不能反向解析为事实**。
 
-## 企业 API 来源
+---
 
-### 和风天气：逐日预报
+## 功能模块说明
 
-- 固定服务域名：`https://pb5ctx5qqr.re.qweatherapi.com`。
-- 端点：`GET /v7/weather/15d`。
-- 服务端参数：`location=<高德地理编码返回的经纬度>`、`key=<HEWEATHER_API_KEY>`；不使用高德 `adcode`。
-- 客户端按请求日期过滤并最多使用 15 日逐日预报（`15d` 端点需使用支持 15 日预报的服务密钥），保留供应商确实提供的 `updateTime` 作为 `source_updated_at`。
+### 1. 行程规划（核心链路）
 
-### 高德地图：地理编码、驾车路线和 POI
+用户在页面填写出发地、目的地、出行日期、人数、天数、预算和偏好，服务端按固定顺序执行五个专业 Agent：
 
-- 固定服务域名：`https://restapi.amap.com`。
-- 地理编码端点：`GET /v3/geocode/geo`，参数 `address=<地点>`、`key=<AMAP_API_KEY>`。
-- 驾车路线端点：`GET /v3/direction/driving`，参数 `origin=<起点经纬度>`、`destination=<终点经纬度>`、`key=<AMAP_API_KEY>`。返回值只映射为距离和时长估算，不代表实时路况或到达保证。
-- POI 文本搜索端点：`GET /v5/place/text`，参数 `keywords=<住宿服务或餐饮服务>`、`region=<城市或区域>`、`city_limit=true`、`key=<AMAP_API_KEY>`。`region` 限定搜索区域，`city_limit=true` 禁止跨城扩散。
-- 附近 POI 端点：`GET /v5/place/around`，参数 `keywords=餐饮服务`、`location=<景区经纬度>`、`radius=2000`、`key=<AMAP_API_KEY>`。餐饮 Agent 仅在景区坐标为非空字符串时调用，半径由后端固定为 2000 米。
-- Route Agent 常规天气查询 `风景名胜`；高风险天气优先查询 `博物馆`、`美术馆`、`展馆`，并在行程中标注室内文化场所提醒。每日按上午、下午、傍晚安排，单个景区建议约 120 分钟；候选不足或景区间驾车预估不可用时明确列出待补字段并降级，不复用候选或伪造结果。
-- 供应商原始字段不会透传到 API 响应；POI 仅保留名称、地址、经纬度、类别、标签（tags）和内部来源标识。餐饮展示真实名称、地址，以及来自地图 POI 标签提取、菜系兜底的推荐菜品；不展示评分与推荐指数。
+| Agent | 职责 | 数据来源 |
+| --- | --- | --- |
+| 天气 Agent | 逐日预报、风险等级（暴雨/台风/高温）、活动约束 | 高德地理编码 + 和风天气 |
+| 路线 Agent | 每日上午/下午/傍晚景点安排（各约 120 分钟）、景区间驾车预估；高风险天气优先室内文化场所 | 高德地理编码、驾车路线、POI |
+| 住宿 Agent | 推荐住宿区域与候选（只给位置和筛选建议，不含价格） | 高德住宿 POI |
+| 餐饮 Agent | 按上午景区推荐午餐、按傍晚（回退下午）景区推荐晚餐，从 POI 标签提取推荐菜品 | 高德周边餐饮 POI |
+| 汇总 Agent | 聚合四结果、来源去重、警告收集、顶层状态判定、生成 Markdown | 前序结构化结果（不新增事实） |
 
-## 数据合同与安全边界
+> 天气风险判断、路线约束传递、候选合并与汇总均为**确定性代码**，保证可审计、可测试、可降级。
 
-### 请求、追踪和状态
+### 2. 攻略查询（文档知识库）
 
-`TravelPlanRequest` 的规则如下：地点去除首尾空白；`departure_date` 不得早于服务端当前日期；`travelers` 为 1—20；`days` 为 1—14，默认 3；`budget` 为 0—200000 的整数或空值；偏好最多 12 项。住宿晚数是服务端派生的 `max(days - 1, 0)`，客户端不能提交 `nights` 覆盖它。
+一套完整的 RAG（检索增强生成）子系统：
 
-每次请求使用 UUID v1—v5 格式的 `request_id` 和 `trace_id`。当前 v1 中两者取相同值：请求标识用于跨层关联，追踪标识保留后续接入更细粒度链路追踪的兼容位置。响应和日志不得写入 API Key、Token、Cookie、Authorization、堆栈、内部 URL 或供应商原始响应。
+- **入库**：上传 PDF/DOCX（校验 MIME 与文件魔数）→ 异步后台解析（PyMuPDF / python-docx，图表经 Qwen-VL OCR）→ 切块（上限 800 字符、重叠 100）→ 本地 BGE 向量化 → 写入 Chroma 向量库。
+- **检索**：语义检索（向量）+ 关键词检索（识别省市与意图）双通道，RRF 倒排融合，含省份硬过滤。
+- **回答**：DeepSeek 基于检索片段生成带来源的 Markdown 回答，**只使用片段事实、不编造**。
+- **闭环**：检索记录持久化，支持赞/踩反馈，聚合为「数据看板」统计。
+- **质量**：`backend/evaluation/` 提供可复跑评估工具（16 题、四项指标、DeepSeek 裁判）。
 
-Agent 状态只有以下 4 种：
+> MinerU 云端 PDF 解析客户端已接入代码但**当前未启用**，PDF 始终本地用 PyMuPDF 提取。
 
-| 状态 | 含义与合同要求 |
+### 3. 门票查询
+
+通过飞猪 AI 开放平台（FlyAI）做**只读文本检索**，不创建订单、不处理支付、不收集游客身份信息。三种 provider 由 `FLIGGY_TICKET_PROVIDER` 选择：
+
+| Provider | 行为 |
 | --- | --- |
-| `success` | 有完整 `data`，不能有 `missing_fields` 或 `error`。 |
-| `partial` | 有部分 `data`，必须列出 `missing_fields`。 |
-| `degraded` | 仍有可用 `data`，且必须说明缺失字段或受控错误；例如保留区域建议但没有精确路线。 |
-| `failed` | `data` 必须为空，必须有 `missing_fields` 和受控 `error` 摘要。 |
+| `disabled`（默认） | 不发起请求，返回「服务尚未配置」（503） |
+| `mock` | 返回明确标注的本地演示数据（西湖/故宫/黄山） |
+| `flyai` | 调用 FlyAI `ai-search` / `search-poi` 只读检索，返回门票文本摘要（`data_status=flyai_text`） |
 
-顶层文档使用 `success`、`degraded` 或 `failed`：有 `partial` 或 `degraded` 专业结果时顶层为 `degraded`；存在任意 `failed` 专业结果时顶层为 `failed`。
+FlyAI 文本检索返回自然语言摘要而非结构化价格/库存，因此价格固定显示「信息暂不可用」，**绝不从自然语言猜测实时交易字段**。前端查询前会弹窗告知只读边界。
 
-### 来源时间语义
+### 4. 酒店推荐
 
-- `retrieved_at`：本服务本次从上游获取，或从本进程缓存读取该数据的时间；所有来源必须填写。
-- `source_updated_at`：上游真实提供的内容更新时间，例如和风天气 `updateTime`；上游未提供时为 `null`，不能用 `retrieved_at` 伪造。
-- `data_status`：`realtime` 表示本次上游获取，`cached` 表示进程内缓存命中，`degraded` 表示降级结果。当前模型还保留 `knowledge_base` 枚举以支持未来合同兼容，但本轮不接知识库。
+两种互不混用的数据源模式，均只读展示：
 
-汇总器按 weather、route、lodging、food 顺序聚合来源和警告。来源去重忽略每次可能不同的 `retrieved_at`，只依据来源事实字段；因此相同上游来源不会因读取时间不同而重复出现。
+- **模式一：飞猪 TOP 酒店低价查询（企业模式）**——固定网关 + MD5 签名，需要飞猪商旅资质与渠道授权；价格按「分」内部处理、以「元」输出，按最低价升序稳定排序。
+- **模式二：FlyAI 酒店 + 高德 POI 并列推荐（个人模式）**——FlyAI 查价格/评分/星级/图片/详情，高德查地址/位置；仅对规范化后名称完全相等的酒店合并展示，匹配状态为 `matched` / `flyai_only` / `poi_only`，**不补造价格或地址**。
 
-### 禁止交易字段与安全边界
+### 5. 数据看板
 
-领域合同拒绝以下字段及其同义扩展：`price`、`live_price`、`inventory`、`availability`、`bookable`、`queue`、`queue_time`、`discount`、`rating`、`review_score`、`order_url`。系统只给出候选位置、区域、设施、菜系、偏好筛选和核验提示，不承诺价格、库存、营业、排队或预订结果。
+基于知识检索结果下的「有用 / 没用」反馈，统计知识库内容与 AI 生成内容的好评率，并按来源文档、按地区分组展示。
 
-服务端密钥只从后端环境变量读取，浏览器只访问相对路径；CORS 仅允许配置的同源来源。API 返回通用错误，避免把异常详情、请求参数和供应商响应体泄露给客户端。
+---
 
-## 酒店查询与推荐
+## 快速开始
 
-酒店功能是独立于行程规划的只读能力，默认关闭。它提供两种互不混用的数据源模式：传统飞猪 TOP 接口（面向具备商家/商旅资质的部署）与飞猪 FlyAI 开放平台（面向个人开发者）。两种模式返回的酒店结果都只用于展示，不包含预订、支付、库存或下单能力。
+以下命令在 Windows PowerShell 中从仓库根目录执行。
 
-### 模式一：飞猪 TOP 酒店低价查询（企业模式）
+### 环境要求
 
-- 固定网关：`https://eco.taobao.com/router/rest`，固定 method：`alitrip.btrip.hotel.distribution.search.low.price`（API 56180）。
-- 请求以 TOP MD5 签名，需 `FLIGGY_HOTEL_APP_KEY`、`FLIGGY_HOTEL_APP_SECRET` 和服务端配置的 `FLIGGY_HOTEL_SUB_CHANNEL`；`sub_channel` 由后端注入，不接受前端传入。
-- 按城市、入住/离店日期返回酒店名称、酒店 ID 和最低价（内部按“分”整数处理，输出按人民币元），价格相同时保持飞猪返回顺序。
-- 需要飞猪商旅酒店分销资质和渠道授权，不适合个人开发者；未配置时默认关闭，不发起外部请求。
+- Python **3.12**（以项目当前环境为准）
+- 本地 BGE 向量模型（默认路径 `D:\作业\model\bge-small-zh-v1.5`，可用 `BGE_MODEL_PATH` 覆盖）
+- （可选）`flyai` 命令行工具：`npx skills add alibaba-flyai/flyai-skill` 或 `npm i -g @fly-ai/flyai-cli`，用于门票 / 酒店 FlyAI 模式
 
-### 模式二：FlyAI 酒店 + 高德 POI 并列推荐（个人模式）
-
-- 通过官方 `flyai` CLI 调用 MCP 工具 `search_hotels`，端点 `https://flyai.open.fliggy.com/mcp`；API Key 通过 `FLYAI_API_KEY` 配置，仅注入子进程环境变量，不出现在命令行参数、日志或响应中。
-- 与高德住宿 POI 并行查询，只对规范化后名称完全相等的酒店合并展示价格/评分/星级/图片/详情与地址/位置；未匹配的 FlyAI 结果与高德 POI 分别展示，不补造价格或地址。
-- FlyAI 未返回价格时显示“价格暂不可用”，不显示 0；`detailUrl` 仅作为官方详情外链，只允许 HTTPS，前端新窗口打开并带 `rel="noopener noreferrer"`。
-- 图片只渲染 HTTPS 地址，加载失败时隐藏；供应商字段在前端使用 `textContent`/`createElement` 渲染，不使用 `innerHTML`。
-- 需要在 FlyAI 控制台获取正式 API Key，并确保本机可执行 `flyai` 命令（`npx skills add alibaba-flyai/flyai-skill` 或 `npm i -g @fly-ai/flyai-cli`）。
-
-### 接口与启用
-
-- `POST /api/fliggy/hotels/search`：飞猪 TOP 酒店低价查询，企业模式。
-- `POST /api/fliggy/hotels/recommend`：FlyAI 酒店与高德 POI 并列推荐，个人模式。
-- 默认关闭：开关关闭或凭据缺失时返回 HTTP `503`，不发外部请求；FlyAI 上游受控错误返回 HTTP `502`，仅暴露受控错误码与 `trace_id`，不泄露 API Key 或上游原文。
-
-启用步骤：
+### 安装与启动
 
 ```powershell
-# 编辑 backend\.env（不要提交，也不要粘贴到聊天或文档）
-FLYAI_HOTEL_ENABLED=true
-FLYAI_API_KEY=你的新Key
-# 确保 flyai CLI 可执行；重启后端后进入前端“酒店推荐”视图即可测试
+# 1. 创建并激活虚拟环境
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# 2. 安装后端依赖
+python -m pip install -r backend\requirements.txt
+
+# 3. 复制配置模板，再编辑 backend\.env 填入服务端密钥
+Copy-Item backend\.env.example backend\.env
+
+# 4. 设置当前 PowerShell 会话的 Python 模块路径
+$env:PYTHONPATH = "$PWD\backend"
+
+# 5. 启动 FastAPI（开发环境自动重载）
+python -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
 ```
 
-## 配置
+### 验证
 
-复制 `backend/.env.example` 为 `backend/.env`，只填写本机或部署环境的密钥。`.env` 不得提交，真实密钥不得写入 Git、前端文件、日志、测试样例或 README。
+- 页面：<http://127.0.0.1:8000/>
+- 存活检查：<http://127.0.0.1:8000/api/health>
+- 就绪检查：<http://127.0.0.1:8000/api/ready>（需要 `HEWEATHER_API_KEY` 与 `AMAP_API_KEY` 均非空）
+
+> `.env` 不得提交到版本控制（已由 `.gitignore` 排除）；真实密钥不得写入 Git、前端文件、日志或测试样例。
+
+---
+
+## 配置说明
+
+复制 `backend/.env.example` 为 `backend/.env`，只填写本机或部署环境需要的密钥。所有变量**仅由后端控制，客户端不能覆盖**；密钥默认空值。
 
 | 环境变量 | 用途 | 单位 | 默认值 |
 | --- | --- | --- | --- |
@@ -194,6 +227,34 @@ FLYAI_API_KEY=你的新Key
 | `HEWEATHER_BASE_URL` | 和风天气固定域名 | URL | `https://pb5ctx5qqr.re.qweatherapi.com` |
 | `AMAP_API_KEY` | 高德地图服务端密钥 | — | 空 |
 | `AMAP_BASE_URL` | 高德地图固定域名 | URL | `https://restapi.amap.com` |
+| `MINERU_API_KEY` | MinerU PDF 解析服务端密钥（预留） | — | 空 |
+| `MINERU_BASE_URL` | MinerU 固定服务地址 | URL | `https://mineru.net` |
+| `QWEN_VL_API_KEY` | Qwen-VL 图表 OCR 服务端密钥 | — | 空 |
+| `QWEN_VL_BASE_URL` | Qwen-VL 固定服务地址 | URL | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `QWEN_VL_MODEL` | Qwen-VL 图表 OCR 模型 | — | `qwen-vl-max` |
+| `DEEPSEEK_API_KEY` | DeepSeek 大模型润色服务端密钥 | — | 空 |
+| `DEEPSEEK_BASE_URL` | DeepSeek 固定服务地址 | URL | `https://api.deepseek.com` |
+| `DEEPSEEK_MODEL` | DeepSeek 润色模型（务必使用 `deepseek-chat`，勿配推理模型） | — | `deepseek-chat` |
+| `DEEPSEEK_MAX_TOKENS` | DeepSeek 单次生成最大 token 数 | 个 | `2000` |
+| `DEEPSEEK_TIMEOUT_SECONDS` | DeepSeek 单次请求总超时 | 秒 | `60` |
+| `BGE_MODEL_PATH` | 本地 BGE embedding 模型目录 | 路径 | `D:\作业\model\bge-small-zh-v1.5` |
+| `DOCUMENT_DATA_DIR` | 文档原文件、解析产物与索引目录 | 路径 | `backend/data` |
+| `CHROMA_COLLECTION_NAME` | Chroma 文档集合名称 | — | `travel_documents` |
+| `DOCUMENT_MAX_UPLOAD_BYTES` | 单份文档最大上传大小 | 字节 | `20971520` |
+| `DOCUMENT_BATCH_MAX_FILES` | 单次批量上传最大文件数 | 份 | `10`（范围 1—20） |
+| `KNOWLEDGE_SEARCH_RESULT_LIMIT` | 知识检索最终返回结果数 | 条 | `12`（范围 1—50） |
+| `FLIGGY_TICKET_PROVIDER` | 门票查询 provider | — | `disabled`（`disabled` / `mock` / `flyai`） |
+| `FLYAI_API_KEY` | FlyAI 开放平台 API Key（门票与酒店共用） | — | 空 |
+| `FLYAI_TIMEOUT_SECONDS` | FlyAI 请求总超时 | 秒 | `30` |
+| `FLIGGY_HOTEL_ENABLED` | 飞猪 TOP 酒店低价查询开关（企业模式） | 布尔 | `false` |
+| `FLIGGY_HOTEL_APP_KEY` | 飞猪 TOP 应用 AppKey | — | 空 |
+| `FLIGGY_HOTEL_APP_SECRET` | 飞猪 TOP 应用 AppSecret（仅签名） | — | 空 |
+| `FLIGGY_HOTEL_SUB_CHANNEL` | 飞猪商旅酒店分销渠道值 | — | 空 |
+| `FLIGGY_HOTEL_API_URL` | 飞猪 TOP 固定 HTTPS 网关 | URL | `https://eco.taobao.com/router/rest` |
+| `FLYAI_HOTEL_ENABLED` | FlyAI 酒店推荐开关（个人模式） | 布尔 | `false` |
+| `FLYAI_CLI_COMMAND` | FlyAI CLI 可执行命令 | 命令 | `flyai` |
+| `FLYAI_CLI_TIMEOUT_SECONDS` | FlyAI CLI 单次调用总超时 | 秒 | `20.0` |
+| `FLYAI_HOTEL_LIMIT` | FlyAI 酒店推荐单次最多返回结果数 | 条 | `10`（范围 1—20） |
 | `EXTERNAL_CONNECT_TIMEOUT_SECONDS` | 外部 HTTP 建连超时 | 秒 | `3.0` |
 | `EXTERNAL_READ_TIMEOUT_SECONDS` | 外部 HTTP 响应读取超时 | 秒 | `8.0` |
 | `EXTERNAL_TOTAL_TIMEOUT_SECONDS` | 外部 API 单次总超时配置 | 秒 | `10.0` |
@@ -204,83 +265,53 @@ FLYAI_API_KEY=你的新Key
 | `AMAP_GEOCODE_CACHE_TTL_SECONDS` | 高德地理编码缓存 TTL | 秒 | `604800` |
 | `AMAP_ROUTE_CACHE_TTL_SECONDS` | 高德驾车路线缓存 TTL | 秒 | `900` |
 | `AMAP_POI_CACHE_TTL_SECONDS` | 高德 POI 搜索缓存 TTL | 秒 | `3600` |
-| `MINERU_API_KEY` | MinerU PDF 解析服务端密钥 | — | 空 |
-| `MINERU_BASE_URL` | MinerU 固定服务地址 | URL | `https://mineru.net` |
-| `QWEN_VL_API_KEY` | Qwen-VL 图表 OCR 服务端密钥 | — | 空 |
-| `QWEN_VL_BASE_URL` | Qwen-VL 固定服务地址 | URL | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
-| `QWEN_VL_MODEL` | Qwen-VL 图表 OCR 模型 | — | `qwen-vl-max` |
-| `BGE_MODEL_PATH` | 本地 BGE embedding 模型目录 | 路径 | `D:\作业\model\bge-small-zh-v1.5` |
-| `DOCUMENT_DATA_DIR` | 文档原文件、解析产物与索引目录 | 路径 | `backend/data` |
-| `CHROMA_COLLECTION_NAME` | Chroma 文档集合名称 | — | `travel_documents` |
-| `DOCUMENT_MAX_UPLOAD_BYTES` | 单份文档最大上传大小 | 字节 | `20971520` |
-| `DOCUMENT_BATCH_MAX_FILES` | 单次批量上传最大文件数 | 份 | `10`（范围 1—20） |
-| `FLIGGY_HOTEL_ENABLED` | 飞猪 TOP 酒店低价查询开关（企业模式） | 布尔 | `false` |
-| `FLIGGY_HOTEL_APP_KEY` | 飞猪 TOP 应用 AppKey | — | 空 |
-| `FLIGGY_HOTEL_APP_SECRET` | 飞猪 TOP 应用 AppSecret（仅签名，不落日志/响应） | — | 空 |
-| `FLIGGY_HOTEL_SUB_CHANNEL` | 飞猪商旅酒店分销渠道值 | — | 空 |
-| `FLIGGY_HOTEL_API_URL` | 飞猪 TOP 固定 HTTPS 网关（仅允许官方地址） | URL | `https://eco.taobao.com/router/rest` |
-| `FLYAI_HOTEL_ENABLED` | FlyAI 酒店推荐开关（个人模式） | 布尔 | `false` |
-| `FLYAI_API_KEY` | FlyAI 开放平台 API Key（门票与酒店共用） | — | 空 |
-| `FLYAI_CLI_COMMAND` | FlyAI CLI 可执行命令 | 命令 | `flyai` |
-| `FLYAI_CLI_TIMEOUT_SECONDS` | FlyAI CLI 单次调用总超时 | 秒 | `20.0` |
-| `FLYAI_HOTEL_LIMIT` | FlyAI 酒店推荐单次最多返回结果数 | 条 | `10`（范围 1—20） |
 
-所有变量仅由后端控制，客户端不能覆盖。密钥默认空值；缺少任一外部密钥时，`/api/ready` 返回 HTTP `503`，但 `/api/health` 仍可用于进程存活检查。酒店相关开关默认关闭，即使密钥存在也不会在未开启时发起外部请求。
+外部服务域名（`*_BASE_URL`）均被配置校验器锁定为官方 HTTPS 地址，客户端不可覆盖；密钥缺失时 `/api/ready` 返回 `503`，但 `/api/health` 仍可用于进程存活检查。
 
-## 本地启动
+---
 
-以下命令在 Windows PowerShell 中从仓库根目录执行。Python 建议使用 3.12，依赖以当前项目环境为准。
+## API 文档
 
-```powershell
-# 可选：创建并激活虚拟环境
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+所有接口前缀为 `/api`，响应统一携带安全响应头与 `X-Request-Id`。
 
-# 安装后端依赖（若项目环境尚未安装）
-python -m pip install -r backend\requirements.txt
+API 速览：
 
-# 复制配置模板，再编辑 backend\.env 填入服务端密钥
-Copy-Item backend\.env.example backend\.env
-
-# 设置当前 PowerShell 会话的 Python 模块路径
-$env:PYTHONPATH = "$PWD\backend"
-
-# 启动 FastAPI（开发环境自动重载）
-python -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+```text
+GET /api/health
+GET /api/ready
+POST /api/travel-plans
+POST /api/documents
+POST /api/documents/batch
+GET /api/documents
+GET /api/documents/{id}
+GET /api/documents/{id}/chunks
+DELETE /api/documents/{id}
+POST /api/knowledge-search
+GET /api/knowledge-records
+DELETE /api/knowledge-records/{id}
+DELETE /api/knowledge-records
+POST /api/knowledge-records/{id}/rating
+GET /api/knowledge-stats
+GET /api/fliggy/status
+POST /api/fliggy/tickets/search
+POST /api/fliggy/hotels/search
+POST /api/fliggy/hotels/recommend
 ```
 
-启动后访问：
+### 健康检查
 
-- 页面：<http://127.0.0.1:8000/>
-- 存活检查：<http://127.0.0.1:8000/api/health>
-- 就绪检查：<http://127.0.0.1:8000/api/ready>
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 进程存活检查，不要求外部密钥 |
+| `GET` | `/api/ready` | 配置就绪检查，密钥缺失时返回 `503` |
 
-`/api/ready` 需要 `HEWEATHER_API_KEY` 和 `AMAP_API_KEY` 均非空；这不等同于已验证供应商网络可用性。
+### 行程规划
 
-## API 使用
-
-### `POST /api/travel-plans`
-
-请求头可选 `X-Request-Id`。传入合法 UUID v4 时服务端会规范化并沿用；缺失或版本不受支持时由服务端生成新的 UUID v4。请求体 `Content-Type` 为 `application/json`。
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `POST` | `/api/travel-plans` | 生成旅行规划（请求 → `TravelPlanDocument`） |
 
 #### 请求示例
-
-```powershell
-$body = @{
-  origin = "上海"
-  destination = "杭州"
-  departure_date = "2026-09-01"
-  travelers = 2
-  days = 3
-  budget = 3000
-  preferences = @("亲子", "美食")
-} | ConvertTo-Json
-
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/travel-plans" `
-  -ContentType "application/json" -Body $body
-```
-
-等价的请求 JSON 形状如下：
 
 ```json
 {
@@ -294,9 +325,9 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/travel-plans" `
 }
 ```
 
-#### 响应示例
+约束：出发地/目的地去除首尾空白；日期不得早于今天；人数 1—20；天数 1—14（默认 3）；预算 0—200000；偏好最多 12 项。住宿晚数由服务端按 `max(days - 1, 0)` 派生，客户端不能提交 `nights`。
 
-HTTP `200` 返回结构化文档。下面是 API 合同的精简 JSON 形状；实际响应还会包含各领域的完整字段、来源和警告。
+#### 响应示例（精简形状）
 
 ```json
 {
@@ -316,45 +347,44 @@ HTTP `200` 返回结构化文档。下面是 API 合同的精简 JSON 形状；�
 }
 ```
 
-页面不展示 JSON 源码。浏览器读取响应后只展示 Markdown 正文、待核验事项、来源更新时间和降级说明；结构化 JSON 仅作为 API 消费者和测试使用。Markdown 行程包含每日天气提醒、上午/下午/傍晚景区与建议时长、景区间驾车预估，以及按时段关联的午餐和晚餐餐饮名称、地址。晚餐优先使用傍晚景区，缺失时回退下午景区；餐饮营业安排仍需以商家官方信息核验。
+页面不展示 JSON 源码。浏览器读取响应后只展示 Markdown 正文、待核验事项、来源更新时间和降级说明；结构化 JSON 仅作为 API 消费者与测试使用。
 
-#### 错误响应
+错误：`422` 参数不符合合同；`500` 服务端未预期错误（对外统一为「旅行规划暂时不可用」）。
 
-- HTTP `422`：请求体不符合 Pydantic 合同，例如缺少 `destination`、人数不在 1—20 或日期早于今天。浏览器显示「请求参数不符合要求」或服务端提供的可读摘要。
-- HTTP `500`：编排或服务端发生未预期错误。浏览器显示「旅行规划暂时不可用」，不展示异常堆栈或供应商原始响应。
-- HTTP `503`：`GET /api/ready` 在外部密钥缺失时返回「外部数据服务尚未配置」。
+### 文档库
 
-### 文档库上传
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `POST` | `/api/documents` | 单文档上传（`202`，后台异步处理） |
+| `POST` | `/api/documents/batch` | 批量上传（multipart，默认最多 10 份，范围 1—20） |
+| `GET` | `/api/documents` | 列出所有文档记录 |
+| `GET` | `/api/documents/{id}` | 查看单个文档记录 |
+| `GET` | `/api/documents/{id}/chunks` | 查看文档内容块 |
+| `DELETE` | `/api/documents/{id}` | 删除文档（含向量与物理文件） |
 
-文档库仅接受 MIME 类型和文件后缀一致、且文件签名有效的 PDF 与 DOCX。单文件接口保持为 `POST /api/documents`，成功时返回 HTTP `202` 与一份 `DocumentRecord`；其既有错误合同不变。
+文档仅接受 MIME 与后缀一致、文件魔数有效的 PDF 与 DOCX；批量上传响应按 `index` 逐项返回 `accepted` / `rejected` / `unavailable` 状态。
 
-批量上传使用 `POST /api/documents/batch`，请求采用 multipart，并以重复的 `files` 字段按选择顺序提交。默认最多 10 份，后端可通过 `DOCUMENT_BATCH_MAX_FILES` 设置为 1—20。响应中的每项仅包含 1-based `index`、`accepted` / `rejected` / `unavailable` 状态，以及接受项的 `DocumentRecord` 或其他项的受控错误摘要；`accepted` 项会按既有 `DocumentRecord` 合同返回文件名，`rejected` / `unavailable` 项绝不回显不可信文件名、文件路径或异常详情。任一文件被接受时外层返回 `202`；全部校验失败返回 `422`；没有接受项且存在合法文件因处理器或存储不可用而无法接收时返回 `503`。未通过的文件不会入库或进入后台处理队列。
+### 知识检索
 
-文档处理依赖本地 BGE 模型、Chroma、`python-docx`、MinerU、Qwen-VL 和 PyMuPDF。当前 PDF 始终在本地由 PyMuPDF 提取；MinerU 配置保留给后续受控外发解析接入，当前处理链路不会调用它。PyMuPDF 只能从 PDF 中提取可访问的文本与基础结构，不能保证扫描件 OCR、复杂版面、图表或表格的完整还原；此类内容需人工核验，后续接入受控 MinerU/Qwen-VL 后再按实际能力处理。
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `POST` | `/api/knowledge-search` | 混合检索 + 可选 DeepSeek 润色 + 保存记录 |
+| `GET` | `/api/knowledge-records` | 列出查询记录（仅含已生成回答） |
+| `DELETE` | `/api/knowledge-records/{id}` | 删除单条记录 |
+| `DELETE` | `/api/knowledge-records` | 清空所有记录 |
+| `POST` | `/api/knowledge-records/{id}/rating` | 对记录赞 / 踩 |
+| `GET` | `/api/knowledge-stats` | 评价统计（按文档 / 地区） |
 
-### 酒店查询与推荐接口
+### 门票与酒店
 
-两个接口默认关闭，未配置或开关关闭时返回 HTTP `503`。
+| 方法 | 路径 | 用途 | 模式 |
+| --- | --- | --- | --- |
+| `GET` | `/api/fliggy/status` | 检查门票服务可用性 | — |
+| `POST` | `/api/fliggy/tickets/search` | 门票只读文本检索 | 门票 |
+| `POST` | `/api/fliggy/hotels/search` | 飞猪 TOP 酒店低价查询 | 酒店（企业） |
+| `POST` | `/api/fliggy/hotels/recommend` | FlyAI 酒店 + 高德 POI 并列推荐 | 酒店（个人） |
 
-#### `POST /api/fliggy/hotels/search`（飞猪 TOP，企业模式）
-
-请求按城市与入住/离店日期查询飞猪酒店最低价，价格按最低价升序稳定排序。请求体：
-
-```json
-{
-  "city_name": "杭州",
-  "check_in": "2026-09-01",
-  "check_out": "2026-09-02",
-  "page_no": 1,
-  "page_size": 20
-}
-```
-
-响应包含 `hotels` 列表（`hotel_id`、`name`、`low_price`、`currency`、`supplier`）、`total`、分页和 `trace_id`；`low_price` 以人民币元输出数字。
-
-#### `POST /api/fliggy/hotels/recommend`（FlyAI + 高德 POI，个人模式）
-
-请求体：
+酒店请求体示例（`/hotels/recommend`）：
 
 ```json
 {
@@ -362,97 +392,212 @@ HTTP `200` 返回结构化文档。下面是 API 合同的精简 JSON 形状；�
   "check_in": "2026-09-01",
   "check_out": "2026-09-02",
   "poi_name": "西湖",
-  "sort": "price_asc",
+  "sort": "rate_desc",
   "max_price": 500,
   "limit": 10
 }
 ```
 
-响应包含 `hotels` 列表，每项表示一个酒店：
+错误语义：`422` 参数不合法；`503` 功能未配置 / 开关关闭 / 缺密钥；`502` FlyAI 上游受控错误（仅返回受控错误码与 `trace_id`）。
 
-- `hotel_name`、`flyai_price`（无价格时为 `null`）、`flyai_score`、`flyai_star`、`flyai_main_pic`、`detail_url`；
-- `amap_address`、`amap_location`（高德匹配结果，未匹配时为 `null`）；
-- `price_source`、`poi_source`、`match_status`（`matched` / `flyai_only` / `poi_only`）；
-- 顶层含 `flyai_retrieved_at`、`amap_retrieved_at`、`poi_unavailable` 和 `trace_id`。
+---
 
-错误：参数不合法返回 `422`；开关关闭或凭据缺失返回 `503`；FlyAI 上游受控错误返回 `502`，仅返回受控错误码与 `trace_id`，不泄露 API Key 或供应商原文。
+## 核心概念：数据合同与状态
 
-### 健康检查
+### Agent 结果合同
 
-- `GET /api/health`：进程存活检查，正常返回 `{"status":"ok"}`，不要求外部密钥。
-- `GET /api/ready`：配置就绪检查，密钥缺失时返回 `503`，就绪时返回 `{"status":"ready"}`。
+每个专业 Agent 返回统一信封（Pydantic 强类型，`extra="forbid"` 拒绝未声明字段、`frozen` 构造后不可变）：
 
-## 前端安全与页面
+| 字段 | 约束 |
+| --- | --- |
+| `agent` | 固定为 `weather` / `route` / `lodging` / `food` |
+| `status` | 仅允许 `success` / `partial` / `degraded` / `failed` |
+| `summary` | 面向汇总器的简短已证实结论 |
+| `data` | 领域字段约束；禁止密钥、原始异常、未授权时效字段 |
+| `constraints` | 供下游消费的确定性限制 |
+| `sources` | 所有外部或知识库事实的来源集合 |
+| `warnings` | 对用户可见的核验提示和风险说明 |
+| `request_id` / `trace_id` | 请求标识与追踪标识（当前取相同值） |
 
-- 页面布局为桌面端双栏：左侧行程正文，右侧待核验事项、来源与更新时间、降级说明；窄屏在 `768px` 断点下改为单栏。
-- 本地依赖版本：`marked` `15.0.12`，文件为 `frontend/vendor/marked.min.js`；`DOMPurify` `3.2.6`，文件为 `frontend/vendor/purify.min.js`。
-- 本地文件 SHA-256：`marked.min.js` 为 `3e7e7d7feb3e5d58cb6c804f68ab5c24cc7e5eb6270fd6e5cbb9124739217d0c`；`purify.min.js` 为 `89e1fa7647cb495370d3a997ace4387f5d15d9f4c5af12352c53daa400956287`。完整许可证和 npm shasum 见 `frontend/vendor/THIRD_PARTY_NOTICES.md`。
-- XSS 策略：Markdown 先由 `marked.parse` 转换，再由 `DOMPurify.sanitize` 净化。前端配置 `FORBID_TAGS` 禁止 `script`、`style`、`svg`、`math` 标签，配置 `FORBID_ATTR` 禁止名称匹配 `on*` 的事件属性。列表和错误文字使用 `textContent` / `replaceChildren`，不把 API 响应 JSON 序列化为页面原文。
-- 前端只调用相对路径 `/api/travel-plans`，不携带服务端密钥，也不从 CDN 加载运行时依赖。
-- 酒店推荐视图按来源并列展示：FlyAI 负责价格/评分/星级/图片/官方详情，高德负责地址/位置；未匹配字段显示“位置暂无匹配”或“价格暂不可用”，不显示 0、不补造数据、不展示“可预订/库存/下单”等承诺。图片与详情链接仅允许 HTTPS，图片加载失败自动隐藏，供应商字段一律使用 `textContent`/`createElement` 渲染。
+### 四种状态
 
-## 缓存、重试与熔断
+| 状态 | 含义 | 合同要求 |
+| --- | --- | --- |
+| `success` | 有完整 `data` | 不得有 `missing_fields` 或 `error` |
+| `partial` | 有部分 `data` | 必须列出 `missing_fields` |
+| `degraded` | 仍有可用 `data` | 必须说明缺失字段或受控错误 |
+| `failed` | 完全失败 | `data` 必须为空，必须有 `missing_fields` 和受控 `error` |
 
-这是当前 MVP 的进程内行为，不是分布式缓存或全局流量治理。当前已知限制包括：和风天气 15 日窗口之外的日期可能没有匹配的逐日预报；多日外部调用按顺序执行，暂未实现 Route 总 deadline；附近 POI 仅按非空坐标字符串调用，未做本地经纬度格式校验；生产化治理尚未实现；天气日期连续性和来源元数据异常容错仍待加强。这些事项不能视为已解决：
+顶层文档状态：存在任意 `failed` → `failed`；存在 `partial` / `degraded` → `degraded`；全成功 → `success`。
 
-- 和风天气 15 日窗口之外的日期可能没有匹配的逐日预报。
-- 多日外部调用按顺序执行，当前暂无 Route 总 deadline。
-- 附近 POI 仅检查坐标字符串非空，未做本地经纬度格式校验。
-- 认证、限流、租户隔离、集中式密钥管理、审计和监控等生产化治理尚未实现。
-- 天气日期连续性校验、来源元数据异常容错仍是待加强项。
+### 来源时间语义
 
-当前 MVP 的缓存、重试和熔断行为如下：
+- `retrieved_at`：本服务本次获取（或从缓存读取）的时间，所有来源必须填写；
+- `source_updated_at`：上游真实提供的内容更新时间，上游未提供时为 `null`，**不能用 `retrieved_at` 伪造**；
+- `data_status`：`realtime`（本次上游获取）/ `cached`（缓存命中）/ `degraded`（降级）；模型保留 `knowledge_base` 枚举以兼容未来知识库来源合同。
 
-1. 天气、地理编码、驾车路线和 POI 分别使用对应 TTL 的内存缓存；命中缓存时返回 `data_status=cached`，并刷新 `retrieved_at`。
-2. 首次上游请求返回 `data_status=realtime`；供应商的真实更新时间才写入 `source_updated_at`。
-3. 仅对连接错误、超时、HTTP `429` 和 HTTP `5xx` 做最多 3 次指数退避重试；业务参数错误和其他响应不盲目重试。
-4. 连续失败达到 `CIRCUIT_BREAKER_FAILURE_THRESHOLD` 后打开熔断，保持 `CIRCUIT_BREAKER_OPEN_SECONDS`；熔断期间不继续访问上游，恢复后允许探测请求。
-5. 单个 Agent 异常会转换为受控 `failed` 结果，由汇总器继续生成其余可用信息；最终顶层状态会反映失败。
+汇总器按 weather → route → lodging → food 顺序聚合来源与警告，来源去重忽略每次不同的 `retrieved_at`，只依据来源事实字段。
 
-## 测试与质量门禁
+### 禁止交易字段
 
-从仓库根目录执行，显式设置 `PYTHONPATH`，避免 Windows 下模块导入依赖当前目录偶然性：
+领域合同拒绝 `price`、`live_price`、`inventory`、`availability`、`bookable`、`queue`、`queue_time`、`discount`、`rating`、`review_score`、`order_url` 及其同义扩展。系统只给出候选位置、区域、设施、菜系、偏好筛选与核验提示，**不承诺价格、库存、营业、排队或预订结果**。
+
+---
+
+## 容错设计
+
+当前 MVP 为进程内行为，不是分布式治理：
+
+1. **缓存**：天气、地理编码、驾车路线、POI 分别使用对应 TTL 的内存缓存；命中缓存返回 `data_status=cached` 并刷新 `retrieved_at`。
+2. **重试**：仅对连接错误、超时、HTTP `429` 和 `5xx` 做最多 3 次指数退避重试；业务参数错误与其他响应不盲目重试。
+3. **熔断**：连续失败达 `CIRCUIT_BREAKER_FAILURE_THRESHOLD`（默认 3 次）后打开熔断，保持 `CIRCUIT_BREAKER_OPEN_SECONDS`（默认 60 秒）；熔断期间不访问上游，恢复后允许探测请求。
+4. **降级**：单个 Agent 异常转换为受控 `failed`，汇总器继续生成其余可用信息；无真实 POI 时保留区域建议并列出待补字段，**不复用候选、不伪造结果**。
+
+---
+
+## 安全设计
+
+### 密钥安全
+- 密钥只在后端环境变量（`.env`），不提交 Git、不进日志与响应；前端只访问相对路径。
+- FlyAI API Key 仅注入子进程环境变量（`FLYAI_API_KEY`），不出现在命令行参数或异常中；飞猪 AppSecret 仅用于请求签名。
+
+### 输入 / 输出安全
+- 所有接口输入经 Pydantic 做类型、长度、范围校验；未知字段一律拒绝。
+- 供应商原始字段不透传前端；API 返回通用错误，不暴露异常堆栈、内部 URL 或上游原文。
+- 领域合同 `extra="forbid"` 拒绝未声明字段，禁止交易字段进入数据链路。
+
+### 前端安全
+- Markdown 先由 `marked.parse` 转换，再由 `DOMPurify.sanitize` 净化，防 XSS（跨站脚本攻击）；配置 `FORBID_TAGS` 禁止 `script` / `style` / `svg` / `math`，配置 `FORBID_ATTR` 禁止 `on*` 事件属性。
+- 列表与错误文字使用 `textContent` / `replaceChildren` 渲染，不把响应 JSON 序列化为页面原文；酒店 / 门票供应商字段一律 `textContent` / `createElement`。
+- 前端只调用相对路径 `/api/...`，不携带任何服务端密钥；第三方库（marked、DOMPurify）为本地固定版本，不从 CDN 加载。
+- 图片与详情链接仅允许 HTTPS（图片加载失败自动隐藏）；本地依赖版本与 SHA-256 见 `frontend/vendor/THIRD_PARTY_NOTICES.md`。
+
+### 响应头与 CORS
+每个响应带 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: strict-origin-when-cross-origin` 与 `X-Request-Id`；CORS 仅允许配置的同源来源，不使用通配符。
+
+---
+
+## 测试与质量
+
+从仓库根目录执行，显式设置 `PYTHONPATH`：
 
 ```powershell
 $env:PYTHONPATH = "$PWD\backend"
 python -m pytest -c backend/pytest.ini backend/tests -v
 ```
 
-测试数量和结果随当前工作树变化，以当前完整测试命令实际结果为准。测试覆盖模型、配置、供应商客户端、韧性、四类 Agent、汇总、编排、API 和前端资源。提交前必须至少通过：
+- 测试覆盖模型、配置、供应商客户端、韧性（重试/熔断）、四类 Agent、汇总、编排、API 和前端资源。
+- **测试验证意图**：验证「为什么需要此行为」，如禁止字段不得进入系统、降级时不得伪造数据、汇总不新增事实。
+- 提交前门禁：
 
 ```powershell
+$env:PYTHONPATH = "$PWD\backend"
 python -m pytest -c backend/pytest.ini backend/tests/test_docs.py -q
 python -m pytest -c backend/pytest.ini backend/tests -q
 git diff --check
 ```
 
-## 常见故障排查
+### RAG 检索质量评估
 
-| 现象 | 检查与处理 |
-| --- | --- |
-| 页面打不开或根路径 `404` | 确认从仓库根目录启动，`frontend/index.html` 存在；不要把 `--app-dir` 指向 `frontend`。 |
-| 启动时报 `ModuleNotFoundError: app` | 在当前 PowerShell 会话设置 `$env:PYTHONPATH = "$PWD\backend"`，或按示例使用 `--app-dir backend`。 |
-| `/api/health` 正常、`/api/ready` 返回 `503` | 检查 `backend/.env` 是否包含非空 `HEWEATHER_API_KEY` 和 `AMAP_API_KEY`；密钥不写进代码或 README。 |
-| 规划返回 `degraded` | 查看页面「待核验事项」和「降级说明」；确认上游网络、密钥、配额和熔断状态，不能把降级当作实时保证。天气超出和风 15 日窗口、景区候选不足、景区坐标缺失或附近餐饮无结果时，均应接受相应降级提示。 |
-| 规划返回 `422` | 对照请求合同检查地点、日期、人数、天数、预算和偏好；未知字段会被拒绝。 |
-| 规划返回 `500` | 查看服务端受控日志中的请求标识，检查编排器和配置；客户端不会收到原始堆栈。 |
-| 外部请求反复失败 | 先检查固定域名是否可达、系统时间和供应商配额，再等待熔断窗口结束；不要通过客户端覆盖 `*_BASE_URL`。 |
-| 前端显示 Markdown 异常 | 确认两个本地 vendor 文件未被替换，并检查 `frontend/vendor/THIRD_PARTY_NOTICES.md` 中的版本和 SHA-256。 |
+```powershell
+cd backend
+$env:PYTHONPATH = "$PWD"
+python -m evaluation.evaluate
+```
+
+基于 16 道真实攻略问题（7 个目的地），由 DeepSeek 裁判按 RAGAS 口径输出四项指标，报告见 `backend/evaluation/report.md`。最近一次结果：**忠实度 0.948 · 上下文召回率 0.838 · 上下文准确率 0.758 · 相关性 0.920**。
+
+---
+
+## 目录结构
+
+```text
+backend/
+  app/
+    main.py               应用工厂、路由注册、依赖组装
+    config.py             服务端配置（密钥、超时、开关）
+    security.py           请求标识与安全响应头
+    dependencies.py       受控依赖组装
+    errors.py             受控错误码
+    models/               强类型数据合同（travel / documents / fliggy / flyai_hotel）
+    services/             外部服务客户端与通用能力（天气、地图、缓存、韧性、文档、检索、酒店、门票）
+    agents/               专业 Agent（weather / route / lodging / food / summary）
+    orchestration/        顺序编排器
+    api/                  接口层（travel / documents / fliggy / flyai_hotel）
+  tests/                  自动化测试
+  evaluation/             RAG 检索质量评估工具（golden 集、裁判、主脚本、报告）
+  data/                   本地文档库数据（.gitignore 排除）
+frontend/
+  index.html              工作台页面
+  app.js                  页面逻辑（请求、安全渲染）
+  styles.css              样式
+  vendor/                 marked、DOMPurify 本地固定版本与许可
+docs/
+  项目宪法.md             项目最高规则
+  v1-baseline-design.md   v1 基线设计
+  superpowers/            分功能设计与实现计划
+  答辩-项目理解与讲解.md   答辩讲解文档（Markdown）
+  答辩-项目理解与讲解.html 答辩讲解文档（网页版）
+```
+
+---
 
 ## 部署与打包
 
-部署包必须同时包含后端和前端静态目录：`backend/`（应用、依赖、配置模板）与 `frontend/`（`index.html`、`app.js`、`styles.css`、`vendor/marked.min.js`、`vendor/purify.min.js`）。FastAPI 从 `backend/app/main.py` 的上级目录定位 `frontend`；只打包后端会导致 API 可用但页面根路径 `404`。
+部署包必须同时包含后端与前端静态目录：`backend/`（应用、依赖、配置模板）与 `frontend/`（`index.html`、`app.js`、`styles.css`、`vendor/`）。FastAPI 从 `backend/app/main.py` 的上级目录定位 `frontend`；只打包后端会导致 API 可用但页面根路径 `404`。
 
-生产环境使用外部进程管理器运行 Uvicorn，注入密钥和配置环境变量，不提交 `.env`。上线前应验证 `/api/health`、`/api/ready`、页面资源和一次脱敏的 API 合同请求，并限制日志访问权限。
+生产环境使用外部进程管理器运行 Uvicorn，注入密钥与配置环境变量，不提交 `.env`。上线前验证 `/api/health`、`/api/ready`、页面资源与一次脱敏 API 请求，并限制日志访问权限。
 
-## 生产化后续
+---
 
-在扩大流量或接入企业生产系统前，建议按优先级补齐：
+## 常见问题排查
 
-- 为相同请求增加 single-flight，避免缓存未命中时并发击穿上游。
-- 使用可观测的异步 HTTP 连接池，复用连接并明确连接生命周期。
-- 实现有上限、可观测的缓存淘汰策略，避免进程内缓存无限增长。
-- 统一请求级超时预算，让天气、路线、住宿、餐饮和汇总共享剩余时间，而不是各自独立等待；当前多日外部调用按顺序执行，暂未实现 Route 总 deadline。
-- 增加限流、认证、租户隔离和配额控制；生产 CORS 只允许明确的前端来源。
-- 增加结构化审计日志、密钥轮换、供应商调用指标、脱敏追踪和告警。
-- 在不改变当前非交易边界的前提下，为未来知识库或 OTA 评审独立的数据合同、授权范围和安全审查；本轮不接知识库、OTA 或交易。
+| 现象 | 检查与处理 |
+| --- | --- |
+| 页面打不开或根路径 `404` | 确认从仓库根目录启动，`frontend/index.html` 存在；不要把 `--app-dir` 指向 `frontend` |
+| 启动报 `ModuleNotFoundError: app` | 设置 `$env:PYTHONPATH = "$PWD\backend"`，或按示例使用 `--app-dir backend` |
+| `/api/health` 正常、`/api/ready` 返回 `503` | 检查 `backend/.env` 是否包含非空 `HEWEATHER_API_KEY` 与 `AMAP_API_KEY` |
+| 规划返回 `degraded` | 查看页面「待核验事项」和「降级说明」；确认上游网络、密钥、配额与熔断状态 |
+| 规划返回 `422` | 对照请求合同检查地点、日期、人数、天数、预算与偏好；未知字段会被拒绝 |
+| 规划返回 `500` | 查看服务端受控日志中的请求标识，检查编排器与配置；客户端不会收到原始堆栈 |
+| 外部请求反复失败 | 检查固定域名可达性、系统时间与供应商配额，等待熔断窗口结束；不要通过客户端覆盖 `*_BASE_URL` |
+| 文档上传被拒绝 | 确认格式为 PDF/DOCX、MIME 与后缀一致、文件魔数有效、大小不超过 20MB |
+| 攻略检索无结果 | 确认文档已处理为 `ready` 状态；检查省份/城市过滤是否排除目标文档 |
+| 门票 / 酒店页面显示「服务尚未配置」 | 检查对应开关（`FLIGGY_TICKET_PROVIDER` / `FLIGGY_HOTEL_ENABLED` / `FLYAI_HOTEL_ENABLED`）与密钥 |
+| 前端显示 Markdown 异常 | 确认 `frontend/vendor/` 两个本地文件未被替换，核对 `THIRD_PARTY_NOTICES.md` 中版本与 SHA-256 |
+
+---
+
+## 文档索引
+
+| 文档 | 说明 |
+| --- | --- |
+| `docs/项目宪法.md` | 项目最高规则：产品边界、数据授权、安全、可观测性、发布门禁 |
+| `docs/v1-baseline-design.md` | v1 基线设计：目标、范围、数据合同、降级矩阵、实施顺序 |
+| `docs/superpowers/` | 各功能的规格设计与实现计划 |
+| `docs/答辩-项目理解与讲解.md` / `.html` | 答辩讲解：项目理解 + 精讲详讲（通俗中文） |
+
+---
+
+## 已知限制与路线图
+
+### 当前已知限制
+
+- 缓存与熔断为**进程内**行为，重启即清空，不支持多实例共享；
+- 多日行程的外部调用按顺序执行，暂无统一的请求级超时预算；
+- 附近 POI 仅检查坐标字符串非空，未做本地经纬度格式校验；
+- 和风天气 15 日窗口之外的日期可能没有匹配的逐日预报；
+- PDF 扫描件（图片型）依赖 OCR 能力，复杂版面不能保证完整还原；
+- 认证、限流、租户隔离、集中式密钥管理、审计与监控等生产化治理尚未实现。
+
+### 生产化路线图
+
+按优先级补齐：
+
+1. 相同请求 single-flight，避免缓存未命中时并发击穿上游；
+2. 可观测的异步 HTTP 连接池，明确连接生命周期；
+3. 有上限、可观测的缓存淘汰策略；
+4. 统一的请求级超时预算（天气、路线、住宿、餐饮、汇总共享剩余时间）；
+5. 限流、认证、租户隔离与配额控制；生产 CORS 仅允许明确前端来源；
+6. 结构化审计日志、密钥轮换、供应商调用指标、脱敏追踪与告警；
+7. 在不改变非交易边界的前提下，为知识库或 OTA 扩展评审独立的数据合同、授权范围与安全审查。

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Protocol
 
 from app.models.flyai_hotel import CombinedHotelResult, FlyAIHotel, FlyAIHotelSearchRequest
@@ -73,7 +74,14 @@ class FlyAIHotelRecommendationService:
             for poi in candidates:
                 merged.append(self._from_poi(poi))
 
-        merged.sort(key=lambda item: (item.flyai_price is None, item.flyai_price is not None and item.flyai_price, item.match_status == "poi_only"))
+        merged.sort(
+            key=lambda item: (
+                item.flyai_score is None,
+                -item.flyai_score if item.flyai_score is not None else Decimal(0),
+                item.flyai_price is None,
+                item.flyai_price if item.flyai_price is not None else Decimal(0),
+            )
+        )
         amap_retrieved_at = self._amap_retrieved_at(amap_items)
         return HotelRecommendationResults(
             merged,

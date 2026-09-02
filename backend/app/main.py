@@ -33,6 +33,8 @@ from app.services.knowledge_polish import KnowledgePolisher
 from app.services.mineru import MinerUClient
 from app.services.qwen_vl import QwenVLClient
 from app.services.query_record_store import QueryRecordStore
+from app.services.query_parser import TravelQueryParser
+from app.services.travel_plan_store import TravelPlanStore
 
 
 def _frontend_dir() -> Path:
@@ -101,6 +103,16 @@ def create_app(
             app.state.chroma_store,
         )
     app.state.query_record_store = QueryRecordStore(app.state.document_store.data_dir)
+    app.state.query_parser = TravelQueryParser(
+        DeepSeekClient(
+            settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url,
+            model=settings.deepseek_model,
+            max_tokens=settings.deepseek_max_tokens,
+            timeout=settings.deepseek_timeout_seconds,
+        )
+    )
+    app.state.travel_plan_store = TravelPlanStore(app.state.document_store.data_dir)
     app.state.fliggy_ticket_service = fliggy_ticket_service or _build_ticket_service(settings)
     app.state.fliggy_hotel_service = fliggy_hotel_service or build_hotel_search_service(settings)
     app.state.flyai_hotel_recommendation_service = (

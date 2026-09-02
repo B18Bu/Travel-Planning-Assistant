@@ -139,17 +139,18 @@ async def test_unmatched_results_do_not_copy_fields_between_sources():
 
 
 @pytest.mark.asyncio
-async def test_prices_sort_ascending_with_missing_prices_last():
+async def test_scores_sort_descending_with_missing_scores_last():
+    # 高分酒店定价更高，旧逻辑按价格升序会得到相反顺序，用于区分排序依据。
     flyai_client = FakeFlyAIClient([
-        flyai("无价", "f0"),
-        flyai("高价", "f1", 500),
-        flyai("低价", "f2", 100),
+        flyai("无评分", "f0", score=None),
+        flyai("低分便宜", "f1", 100, score=4.0),
+        flyai("高分贵", "f2", 500, score=4.9),
     ])
     amap_client = FakeAmapClient([])
 
     result = await FlyAIHotelRecommendationService(flyai_client, amap_client).recommend(request())
 
-    assert [item.hotel_name for item in result] == ["低价", "高价", "无价"]
+    assert [item.hotel_name for item in result] == ["高分贵", "低分便宜", "无评分"]
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@
   const daysInput = document.getElementById("home-days");
   const budgetInput = document.getElementById("home-budget");
   const preferencesInput = document.getElementById("home-preferences");
+  const queryInput = document.getElementById("home-query");
   const status = document.getElementById("home-status");
   const error = document.getElementById("home-error");
   const taskView = document.getElementById("view-task");
@@ -52,6 +53,7 @@
   let activeView = "home";
   let sequence = 0;
   let currentId = null;
+  let currentSavedPlan = null;
   let historyCollapsed = false;
   let pendingDeleteId = null;
   let requestController = null;
@@ -256,16 +258,34 @@
     requestController = new AbortController();
     const controller = requestController;
     const generation = ++requestGeneration;
-    status.textContent = "正在生成旅行规划…";
+    status.textContent = "正在理解你的旅行需求…";
     error.hidden = true;
-    const task = { id: `t${++sequence}`, origin: originInput.value.trim(), destination: destinationInput.value.trim(), status: "pending", preview: "处理中…", vote: null };
+    const task = { id: `t${++sequence}`, origin: "待解析", destination: "待解析", query: queryInput.value.trim(), status: "pending", preview: "处理中…", vote: null };
     tasks.push(task);
     currentId = task.id;
     renderNav();
     renderProcessing(task);
     try {
+      const parseResponse = await fetch("/api/travel-plans/parse", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: queryInput.value.trim() }), signal: controller.signal });
+      if (!parseResponse.ok) throw new Error(await nonOkMessage(parseResponse));
+      const parsed = await parseResponse.json();
+      const missing = [...(parsed.missing_fields || []), ...(parsed.ambiguous_fields || [])];
+      if (missing.length) {
+        const labels = { origin: "始发地", destination: "目的地", departure_date: "出行日期", travelers: "出行人数", days: "出行天数" };
+        throw new Error(`以下字段是必填项或信息不明确：${[...new Set(missing)].map((field) => labels[field] || field).join("、")}`);
+      }
+      originInput.value = parsed.origin;
+      destinationInput.value = parsed.destination;
+      departureInput.value = parsed.departure_date;
+      travelersInput.value = parsed.travelers;
+      daysInput.value = parsed.days;
+      budgetInput.value = parsed.budget ?? "";
+      preferencesInput.value = (parsed.preferences || []).join(",");
+      task.origin = parsed.origin;
+      task.destination = parsed.destination;
+      renderNav();
       const body = requestBody(new FormData(form));
-      const response = await fetch("/api/travel-plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+      const response = await fetch("/api/travel-plans", { method: "POST", headers: { "Content-Type": "application/json", "X-Travel-Query": queryInput.value.trim() }, body: JSON.stringify(body), signal: controller.signal });
       if (!response.ok) throw new Error(await nonOkMessage(response));
       const documentData = await response.json();
       if (generation !== requestGeneration) return;
@@ -277,7 +297,9 @@
       task.preview = "请求失败";
       renderNav();
       closeTravelModal();
-      setRequestError(requestError instanceof Error ? requestError.message : "请求失败，请稍后重试。");
+      const message = requestError instanceof Error ? requestError.message : "请求失败，请稍后重试。";
+      setRequestError(message);
+      if (message.includes("必填项") || message.includes("不明确")) window.alert(message);
       showView("plan");
     } finally {
       if (generation === requestGeneration) requestController = null;
@@ -692,19 +714,62 @@
     const dashboard = document.getElementById("nav-dashboard");
     const library = document.getElementById("nav-library");
     const plan = document.getElementById("nav-plan");
+    const plans = document.getElementById("nav-plans");
     const guide = document.getElementById("nav-guide");
     const ticket = document.getElementById("nav-ticket");
     const hotel = document.getElementById("nav-hotel");
     if (dashboard) dashboard.classList.toggle("active", name === "dashboard");
     if (library) library.classList.toggle("active", name === "library");
     if (plan) plan.classList.toggle("active", name === "plan");
+    if (plans) plans.classList.toggle("active", name === "plans");
     if (guide) guide.classList.toggle("active", name === "guide");
     if (ticket) ticket.classList.toggle("active", name === "ticket");
     if (hotel) hotel.classList.toggle("active", name === "hotel");
     if (name === "ticket") loadFliggyStatus();
     if (name === "dashboard") loadDashboardStats();
     if (name === "library") loadDocuments();
+    if (name === "plans") loadSavedPlans();
     if (name !== "dashboard") renderNav();
+  }
+
+  async function loadSavedPlans() {
+    const container = document.getElementById("saved-plans");
+    if (!container) return;
+    try {
+      const response = await fetch("/api/travel-plans/saved");
+      if (!response.ok) throw new Error("方案列表暂不可用");
+      const plans = await response.json();
+      container.replaceChildren();
+      if (!plans.length) { container.textContent = "暂无已保存方案。"; return; }
+      plans.forEach((plan) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "saved-plan-item";
+        button.textContent = `${plan.query || "未命名方案"} · v${plan.version}`;
+        button.addEventListener("click", () => openSavedPlan(plan.plan_id));
+        container.appendChild(button);
+      });
+    } catch (requestError) { container.textContent = requestError.message; }
+  }
+
+  async function openSavedPlan(planId) {
+    const response = await fetch(`/api/travel-plans/saved/${encodeURIComponent(planId)}`);
+    if (!response.ok) return;
+    const record = await response.json();
+    currentSavedPlan = record;
+    const task = { id: record.plan_id, origin: record.request.origin, destination: record.request.destination, document: record.document, status: record.document.status, preview: "已保存方案", vote: null };
+    tasks.push(task); currentId = task.id; renderDocument(task, record.document); showView("task");
+  }
+
+  async function submitPlanRevision() {
+    const query = document.getElementById("plan-revision-query")?.value.trim();
+    if (!currentSavedPlan || !query) return;
+    const response = await fetch(`/api/travel-plans/saved/${encodeURIComponent(currentSavedPlan.plan_id)}/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, version: currentSavedPlan.version }) });
+    if (!response.ok) { window.alert(await nonOkMessage(response)); return; }
+    currentSavedPlan = await response.json();
+    const task = tasks.find((item) => item.id === currentSavedPlan.plan_id);
+    if (task) { task.document = currentSavedPlan.document; task.origin = currentSavedPlan.request.origin; task.destination = currentSavedPlan.request.destination; renderDocument(task, task.document); }
+    document.getElementById("plan-revision-query").value = "";
   }
 
   function renderNav() {
@@ -1525,6 +1590,7 @@
   backToIntroButton.addEventListener("click", showIntro);
   newPlanButton.addEventListener("click", startNewPlan);
   form.addEventListener("submit", submitPlan);
+  document.getElementById("plan-revision-submit")?.addEventListener("click", submitPlanRevision);
   ticketForm.addEventListener("submit", submitTicketSearch);
   hotelForm.addEventListener("submit", submitHotelSearch);
   documentUpload.addEventListener("change", uploadDocument);

@@ -5,6 +5,8 @@ bash.exe.stackdump
 __pycache__/
 *.py[cod]
 .pytest_cache/
+travel_planning/
+.pytest-tmp*/
 
 # 本地密钥配置，禁止提交
 .env

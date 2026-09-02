@@ -29,7 +29,7 @@ def test_request_accepts_filters_and_defaults_sort():
 
     assert request.city_name == "杭州"
     assert request.poi_name == "西湖"
-    assert request.sort == "price_asc"
+    assert request.sort == "rate_desc"
     assert request.max_price == Decimal("280.00")
 
 

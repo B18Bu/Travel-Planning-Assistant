@@ -30,7 +30,7 @@ class FlyAIHotelSearchRequest(StrictModel):
     check_in: date
     check_out: date
     poi_name: NonEmptyText | None = None
-    sort: SortOrder = "price_asc"
+    sort: SortOrder = "rate_desc"
     max_price: Annotated[Decimal | None, Field(default=None, ge=Decimal("0"))]
     limit: int = Field(default=10, ge=1, le=20)
 
