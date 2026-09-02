@@ -39,14 +39,14 @@ class LodgingAgent:
         data = LodgingPlanData(
             nights=request.nights,
             recommended_area=area,
-            filter_suggestions=("请按活动区域、交通便利性和入住日期筛选。",),
+            filter_suggestions=self._filter_suggestions(request.profile),
         )
         try:
             area = self._area(daily_areas, request.destination, request.days)
             data = LodgingPlanData(
                 nights=request.nights,
                 recommended_area=area,
-                filter_suggestions=("请按活动区域、交通便利性和入住日期筛选。",),
+                filter_suggestions=self._filter_suggestions(request.profile),
             )
             # 高德 region 需为单一城市名；daily_areas 的 area 可能是「四川省成都市」这类
             # 格式化地址，无法映射城市会绕过 city_limit 导致跨城市返回。
@@ -107,6 +107,14 @@ class LodgingAgent:
         if not isinstance(area, str) or not area.strip():
             raise ValueError("每日区域 area 无效")
         return area
+
+    @staticmethod
+    def _filter_suggestions(profile: object | None = None) -> tuple[str, ...]:
+        guidance = getattr(getattr(profile, "agent_guidance", None), "lodging", ())
+        return (
+            "请按活动区域、交通便利性和入住日期筛选。",
+            *(f"用户偏好：{item}" for item in guidance),
+        )
 
     @staticmethod
     def _poi(item: dict[str, Any], source_id: str, expected_category: str) -> PoiCandidate:

@@ -2,6 +2,7 @@ from datetime import date
 
 from app.agents.route import RouteAgent
 from app.agents.summary import SummaryAgent
+from app.agents.lodging import LodgingAgent
 from app.agents.weather import WeatherAgent
 from app.models.travel import AgentGuidance, DailyWeather, PreferenceItem, RouteGuidance, TravelPlanRequest, TravelPreferenceProfile, WeatherRiskLevel
 
@@ -52,3 +53,12 @@ def test_weather_adds_model_guidance_to_weather_constraints():
     )
 
     assert WeatherAgent._constraints((daily,), profile) == ("用户偏好：减少长时间步行",)
+
+
+def test_lodging_adds_model_guidance_to_filter_suggestions():
+    profile = TravelPreferenceProfile(agent_guidance=AgentGuidance(lodging=("优先靠近地铁站",)))
+
+    assert LodgingAgent._filter_suggestions(profile) == (
+        "请按活动区域、交通便利性和入住日期筛选。",
+        "用户偏好：优先靠近地铁站",
+    )
