@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 
 from app.models.planning import TravelQueryParseResponse
+from app.models.travel import TravelPreferenceProfile
 from app.services.deepseek import DeepSeekClient
 
 
@@ -44,6 +45,7 @@ class TravelQueryParser:
             **values,
             budget=model_result.budget,
             preferences=preferences,
+            profile=self._profile(query, preferences),
             missing_fields=self._missing_fields(values),
             ambiguous_fields=model_result.ambiguous_fields,
         )
@@ -55,6 +57,8 @@ class TravelQueryParser:
             for label, phrases in (
                 ("不吃辣", ("不吃辣", "不要辣", "不吃辛辣")),
                 ("行程不要太赶", ("行程不要太赶", "不要太赶", "轻松游")),
+                ("清真", ("清真", "清真餐")),
+                ("不吃猪肉", ("不吃猪肉", "不吃猪", "忌猪肉")),
             )
             if any(phrase in query for phrase in phrases)
         )
@@ -73,6 +77,24 @@ class TravelQueryParser:
             total = sum(party_counts)
             values["travelers"] = total if 1 <= total <= 20 else None
         return values
+
+    @staticmethod
+    def _profile(query: str, preferences: tuple[str, ...]) -> TravelPreferenceProfile:
+        has_children = any(word in query for word in ("儿童", "孩子", "小孩", "婴儿"))
+        has_elderly = "老人" in query
+        no_spicy = "不吃辣" in preferences
+        no_pork = "不吃猪肉" in preferences
+        halal = "清真" in preferences
+        return TravelPreferenceProfile(
+            has_children=has_children,
+            has_elderly=has_elderly,
+            low_intensity=has_elderly or "行程不要太赶" in preferences,
+            child_friendly=has_children,
+            no_spicy=no_spicy,
+            no_pork=no_pork,
+            halal=halal,
+            verification_notes=("请向商家确认是否清真、是否含猪肉及是否可调辣度。",) if halal else (),
+        )
 
     def _parse_date(self, match: re.Match[str]) -> date | None:
         year = int(match.group("year") or self.today.year)

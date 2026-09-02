@@ -5,7 +5,7 @@ from typing import Annotated
 
 from pydantic import Field, field_validator
 
-from app.models.travel import NonEmptyText, StrictModel
+from app.models.travel import NonEmptyText, StrictModel, TravelPreferenceProfile
 
 
 class TravelQueryParseRequest(StrictModel):
@@ -25,6 +25,7 @@ class TravelQueryParseResponse(StrictModel):
     days: int | None = Field(default=None, ge=1, le=14)
     budget: int | None = Field(default=None, ge=0, le=200000)
     preferences: tuple[NonEmptyText, ...] = Field(default=(), max_length=12)
+    profile: TravelPreferenceProfile = Field(default_factory=TravelPreferenceProfile)
     missing_fields: tuple[NonEmptyText, ...] = ()
     ambiguous_fields: tuple[NonEmptyText, ...] = ()
 

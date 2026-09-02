@@ -33,6 +33,24 @@ async def test_parse_extracts_complete_travel_fields_without_year():
 
 
 @pytest.mark.asyncio
+async def test_parse_builds_profile_for_elderly_children_and_dietary_constraints():
+    parser = TravelQueryParser(StaticClient(), today=date(2026, 9, 2))
+
+    result = await parser.parse(
+        "两位成人带一个孩子和一位老人，9月10日从北京到成都玩3天，清真不吃猪肉，不吃辣，行程不要太赶。"
+    )
+
+    assert result.preferences == ("不吃辣", "行程不要太赶", "清真", "不吃猪肉")
+    assert result.profile.has_children is True
+    assert result.profile.has_elderly is True
+    assert result.profile.low_intensity is True
+    assert result.profile.child_friendly is True
+    assert result.profile.no_spicy is True
+    assert result.profile.no_pork is True
+    assert result.profile.halal is True
+
+
+@pytest.mark.asyncio
 async def test_parse_preserves_rule_values_when_model_fails():
     parser = TravelQueryParser(FailingClient(), today=date(2026, 9, 2))
 

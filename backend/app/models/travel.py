@@ -427,6 +427,19 @@ class TravelPlanDocument(StrictModel):
         return self
 
 
+class TravelPreferenceProfile(StrictModel):
+    """由旅行描述确定性构建的偏好约束。"""
+
+    has_children: bool = False
+    has_elderly: bool = False
+    low_intensity: bool = False
+    child_friendly: bool = False
+    no_spicy: bool = False
+    no_pork: bool = False
+    halal: bool = False
+    verification_notes: tuple[NonEmptyText, ...] = ()
+
+
 class TravelPlanRequest(StrictModel):
     """旅行规划请求的数据合同。"""
 
@@ -438,6 +451,7 @@ class TravelPlanRequest(StrictModel):
     budget: Annotated[int | None, Field(ge=0, le=200000)] = None
     preferences: Annotated[tuple[NonEmptyText, ...], Field(max_length=12)] = ()
     original_query: Annotated[str | None, Field(max_length=4000)] = None
+    profile: TravelPreferenceProfile = Field(default_factory=TravelPreferenceProfile)
 
     @field_validator("origin", "destination", mode="before")
     @classmethod
