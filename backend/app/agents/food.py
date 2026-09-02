@@ -263,6 +263,9 @@ class FoodAgent:
                         candidate = FoodCandidate(poi=self._poi(poi_item, "amap:food", "餐饮服务"), specialties=self._specialties(poi_item))
                     except (KeyError, TypeError, ValueError, ValidationError):
                         continue
+                    if not self._is_allowed_by_profile(candidate, request.profile):
+                        candidate = None
+                        continue
                     if isinstance(raw_name, str) and len(raw_name) > 100:
                         fields.append(f"food_day_{day}_{slot_name}_candidate_name")
                     self._append_sources(sources, [item])
@@ -289,6 +292,19 @@ class FoodAgent:
             else ("附近餐饮候选需以商家官方信息核验，请勿以不安全区域文本搜索替代。",),
         )
         return plan, fields
+
+    @staticmethod
+    def _is_allowed_by_profile(candidate: FoodCandidate, profile: object) -> bool:
+        texts = (candidate.poi.name, candidate.poi.category, *candidate.poi.tags, *candidate.specialties)
+        haystack = " ".join(texts).casefold()
+        preferences = getattr(profile, "preferences", ())
+        exclude_terms = (
+            term
+            for preference in preferences
+            if getattr(preference, "priority", None) == "must"
+            for term in getattr(preference, "exclude_terms", ())
+        )
+        return not any(term.casefold() in haystack for term in exclude_terms)
 
     @staticmethod
     def _value(item: Any, key: str, default: Any = ...):
