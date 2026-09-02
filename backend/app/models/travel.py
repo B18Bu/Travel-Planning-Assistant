@@ -450,9 +450,21 @@ class PreferenceItem(StrictModel):
     verification_required: bool = False
 
 
+class RouteGuidance(StrictModel):
+    instructions: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+    daily_primary_limit: int | None = Field(default=None, ge=1, le=3)
+    priority_terms: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+
+
+class FoodGuidance(StrictModel):
+    instructions: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+    exclude_terms: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+    verification_notes: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+
+
 class AgentGuidance(StrictModel):
-    route: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
-    food: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+    route: RouteGuidance = Field(default_factory=RouteGuidance)
+    food: FoodGuidance = Field(default_factory=FoodGuidance)
     lodging: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
     summary: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
 

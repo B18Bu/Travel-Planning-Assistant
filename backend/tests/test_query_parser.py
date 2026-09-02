@@ -26,7 +26,7 @@ class ProfileClient:
               {"category": "experience", "priority": "prefer", "instruction": "优先亲子互动体验", "exclude_terms": [], "verification_required": false},
               {"category": "experience", "priority": "prefer", "instruction": "摄影友好", "exclude_terms": [], "verification_required": false}
             ],
-            "agent_guidance": {"route": ["每日安排两个主要时段"], "food": [], "lodging": [], "summary": ["说明摄影偏好如何被响应"]},
+            "agent_guidance": {"route": {"instructions": ["每日安排两个主要时段"], "daily_primary_limit": 2, "priority_terms": ["亲子", "摄影"]}, "food": {"instructions": [], "exclude_terms": [], "verification_notes": []}, "lodging": [], "summary": ["说明摄影偏好如何被响应"]},
             "verification_notes": []
           }
         }'''
@@ -63,7 +63,8 @@ async def test_parse_preserves_model_extracted_unlisted_preferences_in_profile()
         "优先亲子互动体验",
         "摄影友好",
     )
-    assert result.profile.agent_guidance.route == ("每日安排两个主要时段",)
+    assert result.profile.agent_guidance.route.daily_primary_limit == 2
+    assert result.profile.agent_guidance.route.priority_terms == ("亲子", "摄影")
 
 
 @pytest.mark.asyncio
