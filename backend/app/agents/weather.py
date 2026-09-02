@@ -51,7 +51,7 @@ class WeatherAgent:
             data = WeatherPlanData(
                 destination=request.destination,
                 daily=daily,
-                constraints=self._constraints(daily),
+                constraints=self._constraints(daily, request.profile),
             )
             if not daily:
                 return self._degraded(
@@ -121,12 +121,14 @@ class WeatherAgent:
         return (f"daily_forecast_days_{actual_days + 1}_to_{request_days}",)
 
     @staticmethod
-    def _constraints(daily: tuple[DailyWeather, ...]) -> tuple[str, ...]:
-        return tuple(
+    def _constraints(daily: tuple[DailyWeather, ...], profile: object | None = None) -> tuple[str, ...]:
+        weather_constraints = tuple(
             f"第 {index} 天：{item.travel_reminder}"
             for index, item in enumerate(daily, 1)
             if item.indoor_preferred
         )
+        guidance = getattr(getattr(profile, "agent_guidance", None), "weather", ())
+        return (*weather_constraints, *(f"用户偏好：{item}" for item in guidance))
 
     @staticmethod
     def _warnings(daily: tuple[DailyWeather, ...]) -> tuple[str, ...]:

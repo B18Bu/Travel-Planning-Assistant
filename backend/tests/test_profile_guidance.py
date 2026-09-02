@@ -2,7 +2,8 @@ from datetime import date
 
 from app.agents.route import RouteAgent
 from app.agents.summary import SummaryAgent
-from app.models.travel import AgentGuidance, PreferenceItem, RouteGuidance, TravelPlanRequest, TravelPreferenceProfile
+from app.agents.weather import WeatherAgent
+from app.models.travel import AgentGuidance, DailyWeather, PreferenceItem, RouteGuidance, TravelPlanRequest, TravelPreferenceProfile, WeatherRiskLevel
 
 
 def test_route_uses_model_daily_primary_limit_without_fixed_persona_rules():
@@ -41,3 +42,13 @@ def test_summary_renders_model_preference_response_and_verification_notes():
     assert "## 用户偏好响应" in lines
     assert "优先亲子互动体验" in "\n".join(lines)
     assert "向商家确认活动年龄限制。" in "\n".join(lines)
+
+
+def test_weather_adds_model_guidance_to_weather_constraints():
+    profile = TravelPreferenceProfile(agent_guidance=AgentGuidance(weather=("减少长时间步行",)))
+    daily = DailyWeather(
+        date=date(2026, 9, 10), condition="晴", risk_level=WeatherRiskLevel.low,
+        travel_reminder="天气适宜出行", indoor_preferred=False,
+    )
+
+    assert WeatherAgent._constraints((daily,), profile) == ("用户偏好：减少长时间步行",)

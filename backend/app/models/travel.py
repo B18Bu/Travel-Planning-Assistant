@@ -466,6 +466,7 @@ class AgentGuidance(StrictModel):
     route: RouteGuidance = Field(default_factory=RouteGuidance)
     food: FoodGuidance = Field(default_factory=FoodGuidance)
     lodging: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+    weather: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
     summary: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
 
 
