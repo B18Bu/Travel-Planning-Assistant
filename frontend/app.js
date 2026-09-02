@@ -238,6 +238,7 @@
 
   function requestBody(formData) {
     const body = Object.fromEntries(formData.entries());
+    delete body.query;
     const departure = new Date(`${body.departure_date}T00:00:00`);
     const today = new Date(`${todayIso()}T00:00:00`);
     if (!body.departure_date || Number.isNaN(departure.getTime()) || departure < today) throw new Error("出行日期不得早于今天。");

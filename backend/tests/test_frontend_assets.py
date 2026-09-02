@@ -23,6 +23,7 @@ def test_frontend_sends_original_travel_query_in_json_body_not_headers():
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
 
     assert "X-Travel-Query" not in script
+    assert "delete body.query;" in script
     assert "JSON.stringify({ ...body, original_query: queryInput.value.trim() })" in script
 
 
