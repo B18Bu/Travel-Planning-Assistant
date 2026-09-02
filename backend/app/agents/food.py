@@ -350,6 +350,8 @@ class FoodAgent:
             if getattr(preference, "priority", None) in {"must", "avoid"}
             for term in getattr(preference, "exclude_terms", ())
         )
+        guidance = getattr(getattr(profile, "agent_guidance", None), "food", None)
+        exclude_terms += tuple(getattr(guidance, "exclude_terms", ()))
         if any("辣" in term for term in exclude_terms):
             exclude_terms += FoodAgent._SPICY_CUISINE_TERMS
         return not any(term.casefold() in haystack for term in exclude_terms)

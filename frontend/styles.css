@@ -200,7 +200,8 @@
   .saved-plan-select span { color: var(--text-dim); font-size: 12px; }
   .saved-plan-select[aria-pressed="true"] { color: var(--accent); }
   .plan-management-page .saved-plan-item:has(.saved-plan-select[aria-pressed="true"]) { border-left: 3px solid var(--accent); padding-left: 12px; }
-  .saved-plan-delete { align-self: center; min-height: 40px; border: 0; border-radius: 8px; background: transparent; color: #b83c3c; cursor: pointer; padding: 7px 12px; }
+  .saved-plan-delete { align-self: center; min-height: 44px; border: 0; border-radius: 8px; background: transparent; color: #b83c3c; cursor: pointer; padding: 7px 12px; }
+  .plan-revision-step { color: var(--muted, #667085); font-size: 13px; margin: 4px 0 12px; }
   .saved-plan-delete:hover { background: #fff2f2; }
   .plan-management-page .plan-revision-panel { background: transparent; border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; padding: 22px 0 0; }
   .plan-revision-head h3 { margin: 0; font-size: 16px; }
@@ -278,6 +279,11 @@
   .travel-preferences { grid-column: 1 / -1; }
   .home-status, .home-error { min-height: 18px; color: var(--text-dim); font-size: 12px; }
   .home-error { color: var(--dislike); }
+  .plan-progress { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 82%, var(--accent) 18%); }
+  .plan-progress-title { color: var(--text); font-size: 13px; font-weight: 600; }
+  .plan-progress .proc-steps { margin-top: 8px; gap: 6px; }
+  .plan-progress .proc-step { color: var(--text-dim); font-size: 12px; }
+  .plan-progress .proc-step.active { color: var(--accent); }
   .task-result-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .34fr); gap: 18px; }
   .result-meta { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow); }
   .result-meta section + section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }

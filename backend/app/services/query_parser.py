@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import date
 from typing import Any
@@ -10,6 +11,8 @@ from pydantic import ValidationError
 from app.models.planning import TravelQueryParseResponse
 from app.models.travel import TravelPreferenceProfile
 from app.services.deepseek import DeepSeekClient
+
+logger = logging.getLogger(__name__)
 
 
 class TravelQueryParser:
@@ -24,20 +27,12 @@ class TravelQueryParser:
     )
     _required_fields = ("origin", "destination", "departure_date", "travelers", "days")
     _model_fields = (*_required_fields, "budget", "preferences", "ambiguous_fields")
-    _number_values = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
-    _field_patterns = {
-        "origin_destination": re.compile(r"从(?P<origin>[\u4e00-\u9fff]{2,20})到(?P<destination>[\u4e00-\u9fff]{2,20})(?:玩|旅游|出行|，|,|。|$)"),
-        "date": re.compile(r"(?:(?P<year>20\d{2})[年./-])?(?P<month>\d{1,2})[月./-](?P<day>\d{1,2})(?:日|号)?"),
-        "days": re.compile(r"(?:玩|游|旅行|出行)?\s*(?P<days>\d+)\s*天"),
-        "party": re.compile(r"(?P<count>\d+|[一二两三四五六七八九十])\s*(?:位|个|名)?\s*(?:成人|大人|儿童|孩子|小孩|老人|婴儿)"),
-    }
 
     def __init__(self, client: DeepSeekClient, *, today: date | None = None) -> None:
         self.client = client
         self.today = today or date.today()
 
     async def parse(self, query: str) -> TravelQueryParseResponse:
-        rule_values = self._rule_values(query)
         try:
             content = await self.client.chat_completion(
                 self._system_prompt,
@@ -46,11 +41,12 @@ class TravelQueryParser:
             payload = self._json_payload(content)
             profile = self._profile(payload.pop("preference_profile", None))
             model_values = self._model_values(payload)
-        except Exception:
+        except Exception as error:
+            logger.warning("旅行需求大模型解析失败，返回缺失字段: %s", error)
             profile = self._fallback_profile()
             model_values = {}
         values = {
-            name: rule_values[name] if rule_values[name] is not None else model_values.get(name)
+            name: model_values.get(name)
             for name in self._required_fields
         }
         preferences = tuple(dict.fromkeys(model_values.get("preferences", ())))
@@ -92,36 +88,6 @@ class TravelQueryParser:
                 continue
             values[name] = getattr(parsed, name)
         return values
-
-    def _rule_values(self, query: str) -> dict[str, object]:
-        values: dict[str, object] = {name: None for name in self._required_fields}
-        values["preferences"] = ()
-        location = self._field_patterns["origin_destination"].search(query)
-        if location:
-            values["origin"] = location.group("origin")
-            values["destination"] = location.group("destination")
-        date_match = self._field_patterns["date"].search(query)
-        if date_match:
-            values["departure_date"] = self._parse_date(date_match)
-        day_match = self._field_patterns["days"].search(query)
-        if day_match:
-            values["days"] = int(day_match.group("days"))
-        party_counts = [self._parse_count(match.group("count")) for match in self._field_patterns["party"].finditer(query)]
-        if party_counts and all(count is not None for count in party_counts):
-            total = sum(party_counts)
-            values["travelers"] = total if 1 <= total <= 20 else None
-        return values
-
-    def _parse_date(self, match: re.Match[str]) -> date | None:
-        year = int(match.group("year") or self.today.year)
-        try:
-            parsed = date(year, int(match.group("month")), int(match.group("day")))
-            return date(year + 1, parsed.month, parsed.day) if match.group("year") is None and parsed < self.today else parsed
-        except ValueError:
-            return None
-
-    def _parse_count(self, value: str) -> int | None:
-        return int(value) if value.isdigit() else self._number_values.get(value)
 
     @staticmethod
     def _missing_fields(values: dict[str, object]) -> tuple[str, ...]:

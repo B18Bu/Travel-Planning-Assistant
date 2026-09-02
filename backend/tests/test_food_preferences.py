@@ -77,6 +77,17 @@ def test_food_candidate_is_removed_when_avoid_preference_has_exclusion_term():
     assert FoodAgent._is_allowed_by_profile(candidate, profile) is False
 
 
+def test_food_candidate_uses_model_food_guidance_exclusion_terms():
+    profile = TravelPreferenceProfile(
+        agent_guidance=AgentGuidance(food=FoodGuidance(exclude_terms=("烧烤",)))
+    )
+    candidate = FoodCandidate(
+        poi=PoiCandidate(name="湖畔烧烤", category="餐饮服务", location="120,30", source_ids=("test",)),
+        specialties=(),
+    )
+    assert FoodAgent._is_allowed_by_profile(candidate, profile) is False
+
+
 def test_daily_food_plan_keeps_flyai_reference_separate_from_poi_candidates():
     plan = DailyFoodPlan(
         day=1,

@@ -146,7 +146,8 @@
                 <input id="home-preferences" name="preferences" type="hidden">
                 <p id="home-status" class="home-status" role="status" aria-live="polite"></p>
                 <p id="home-error" class="home-error" role="alert" hidden></p>
-                <button class="btn-primary btn-block" type="submit">解析并生成方案</button>
+                <button id="plan-submit" class="btn-primary btn-block" type="submit">解析并生成方案</button>
+                <div id="plan-progress" class="plan-progress" role="status" aria-live="polite" hidden></div>
               </form>
             </div>
           </div>
@@ -212,6 +213,7 @@
           <div id="saved-plans" class="saved-plans" aria-label="已保存方案"><p>暂无已保存方案。</p></div>
           <section id="plan-revision-panel" class="plan-revision-panel" hidden aria-labelledby="plan-revision-title">
             <div class="plan-revision-head"><div><h3 id="plan-revision-title">修订所选方案</h3><p id="selected-plan-summary">请先从上方选择一个方案。</p></div></div>
+            <p class="plan-revision-step" id="plan-revision-step" aria-live="polite">第 1 步：选择方案</p>
             <label for="plan-revision-query">告诉 AI 你希望怎样调整</label>
             <textarea id="plan-revision-query" rows="4" maxlength="2000" placeholder="例如：第二天上午改为室内亲子活动，午餐继续保持不辣。"></textarea>
             <div class="plan-revision-actions"><button id="plan-revision-submit" class="btn-primary" type="button" disabled>生成修订方案</button></div>

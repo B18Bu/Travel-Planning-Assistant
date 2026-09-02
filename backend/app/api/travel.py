@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import ValidationError
 
 from app.models.planning import TravelPlanRevisionRequest, TravelQueryParseRequest, TravelQueryParseResponse
 from app.models.travel import TravelPlanDocument, TravelPlanRequest
@@ -69,7 +70,13 @@ async def revise_saved_travel_plan(plan_id: str, payload: TravelPlanRevisionRequ
     parsed = await parser.parse(f"{current.get('query', '')}\n请按以下要求修改：{payload.query}")
     if parsed.missing_fields or parsed.ambiguous_fields:
         raise HTTPException(status_code=422, detail="修改后缺少必填旅行信息")
-    new_request = TravelPlanRequest(**parsed.model_dump(exclude={"missing_fields", "ambiguous_fields"}))
+    request_data = parsed.model_dump(exclude={"missing_fields", "ambiguous_fields"})
+    # 解析响应中的序列化字段是 tuple，而 API 请求合同接收 JSON list。
+    request_data["preferences"] = list(request_data.get("preferences", ()))
+    try:
+        new_request = TravelPlanRequest(**request_data)
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail="修改后旅行信息格式无效") from error
     document = await request.app.state.orchestrator.run(new_request, request.state.request_id, trace_id=request.state.request_id)
     updated = request.app.state.travel_plan_store.revise(plan_id, payload.version, payload.query, new_request, document)
     if updated is None:

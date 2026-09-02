@@ -18,5 +18,13 @@ backend/data/
 .claude/worktrees/
 .superpowers/
 
+# Agent 技能、会话状态与设计过程文件不纳入项目发布提交
+.agents/
+.codex/
+skills/
+docs/
+practice/
+*.log
+
 # Office 打开文档时生成的锁定临时文件，禁止提交
 ~$*

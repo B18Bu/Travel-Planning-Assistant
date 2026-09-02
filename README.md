@@ -21,7 +21,6 @@
   - [数据看板](#5-数据看板)
 - [快速开始](#快速开始)
 - [配置说明](#配置说明)
-- [API 文档](#api-文档)
 - [核心概念：数据合同与状态](#核心概念数据合同与状态)
 - [容错设计](#容错设计)
 - [安全设计](#安全设计)
@@ -85,7 +84,7 @@
 
 ```text
 [浏览器工作台页面]
-      │  POST /api/travel-plans（同源 JSON）
+      │  同源请求
       ▼
 [FastAPI API 层] ── 请求校验、UUID、错误隐藏、安全响应头
       │
@@ -182,8 +181,10 @@ FlyAI 文本检索返回自然语言摘要而非结构化价格/库存，因此�
 ### 环境要求
 
 - Python **3.12**（以项目当前环境为准）
-- 本地 BGE 向量模型（默认路径 `D:\作业\model\bge-small-zh-v1.5`，可用 `BGE_MODEL_PATH` 覆盖）
+- 本地 BGE 向量模型 `bge-small-zh-v1.5`（模型文件由使用者自行准备）
 - （可选）`flyai` 命令行工具：`npx skills add alibaba-flyai/flyai-skill` 或 `npm i -g @fly-ai/flyai-cli`，用于门票 / 酒店 FlyAI 模式
+
+启用 FlyAI 时，先访问 [FlyAI 开放平台](https://open.fly.ai/) 注册并登录，在控制台的 API Key 管理页面创建密钥。将密钥只写入 `backend/.env` 的 `FLYAI_API_KEY`，并按需设置 `FLIGGY_TICKET_PROVIDER=flyai` 或 `FLYAI_HOTEL_ENABLED=true`。密钥不得提交到 GitHub。
 
 ### 安装与启动
 
@@ -202,14 +203,12 @@ Copy-Item backend\.env.example backend\.env
 $env:PYTHONPATH = "$PWD\backend"
 
 # 5. 启动 FastAPI（开发环境自动重载）
-python -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --app-dir backend --reload
 ```
 
 ### 验证
 
-- 页面：<http://127.0.0.1:8000/>
-- 存活检查：<http://127.0.0.1:8000/api/health>
-- 就绪检查：<http://127.0.0.1:8000/api/ready>（需要 `HEWEATHER_API_KEY` 与 `AMAP_API_KEY` 均非空）
+- 页面：启动后访问本机服务地址。
 
 > `.env` 不得提交到版本控制（已由 `.gitignore` 排除）；真实密钥不得写入 Git、前端文件、日志或测试样例。
 
@@ -224,20 +223,15 @@ python -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --por
 | `APP_ENV` | 运行环境名称 | — | `development` |
 | `ALLOWED_ORIGINS` | CORS 允许的浏览器来源列表 | URL 列表 | `["http://localhost:5173"]` |
 | `HEWEATHER_API_KEY` | 和风天气服务端密钥 | — | 空 |
-| `HEWEATHER_BASE_URL` | 和风天气固定域名 | URL | `https://pb5ctx5qqr.re.qweatherapi.com` |
 | `AMAP_API_KEY` | 高德地图服务端密钥 | — | 空 |
-| `AMAP_BASE_URL` | 高德地图固定域名 | URL | `https://restapi.amap.com` |
 | `MINERU_API_KEY` | MinerU PDF 解析服务端密钥（预留） | — | 空 |
-| `MINERU_BASE_URL` | MinerU 固定服务地址 | URL | `https://mineru.net` |
 | `QWEN_VL_API_KEY` | Qwen-VL 图表 OCR 服务端密钥 | — | 空 |
-| `QWEN_VL_BASE_URL` | Qwen-VL 固定服务地址 | URL | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | `QWEN_VL_MODEL` | Qwen-VL 图表 OCR 模型 | — | `qwen-vl-max` |
 | `DEEPSEEK_API_KEY` | DeepSeek 大模型润色服务端密钥 | — | 空 |
-| `DEEPSEEK_BASE_URL` | DeepSeek 固定服务地址 | URL | `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | DeepSeek 润色模型（务必使用 `deepseek-chat`，勿配推理模型） | — | `deepseek-chat` |
 | `DEEPSEEK_MAX_TOKENS` | DeepSeek 单次生成最大 token 数 | 个 | `2000` |
 | `DEEPSEEK_TIMEOUT_SECONDS` | DeepSeek 单次请求总超时 | 秒 | `60` |
-| `BGE_MODEL_PATH` | 本地 BGE embedding 模型目录 | 路径 | `D:\作业\model\bge-small-zh-v1.5` |
+| `BGE_MODEL_PATH` | 本地 `bge-small-zh-v1.5` 模型目录 | 路径 | 由使用者填写 |
 | `DOCUMENT_DATA_DIR` | 文档原文件、解析产物与索引目录 | 路径 | `backend/data` |
 | `CHROMA_COLLECTION_NAME` | Chroma 文档集合名称 | — | `travel_documents` |
 | `DOCUMENT_MAX_UPLOAD_BYTES` | 单份文档最大上传大小 | 字节 | `20971520` |
@@ -266,139 +260,13 @@ python -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --por
 | `AMAP_ROUTE_CACHE_TTL_SECONDS` | 高德驾车路线缓存 TTL | 秒 | `900` |
 | `AMAP_POI_CACHE_TTL_SECONDS` | 高德 POI 搜索缓存 TTL | 秒 | `3600` |
 
-外部服务域名（`*_BASE_URL`）均被配置校验器锁定为官方 HTTPS 地址，客户端不可覆盖；密钥缺失时 `/api/ready` 返回 `503`，但 `/api/health` 仍可用于进程存活检查。
+外部服务地址由后端固定配置，客户端不可覆盖；密钥缺失时服务会提示配置不完整。
 
 ---
 
-## API 文档
+## 接口说明
 
-所有接口前缀为 `/api`，响应统一携带安全响应头与 `X-Request-Id`。
-
-API 速览：
-
-```text
-GET /api/health
-GET /api/ready
-POST /api/travel-plans
-POST /api/documents
-POST /api/documents/batch
-GET /api/documents
-GET /api/documents/{id}
-GET /api/documents/{id}/chunks
-DELETE /api/documents/{id}
-POST /api/knowledge-search
-GET /api/knowledge-records
-DELETE /api/knowledge-records/{id}
-DELETE /api/knowledge-records
-POST /api/knowledge-records/{id}/rating
-GET /api/knowledge-stats
-GET /api/fliggy/status
-POST /api/fliggy/tickets/search
-POST /api/fliggy/hotels/search
-POST /api/fliggy/hotels/recommend
-```
-
-### 健康检查
-
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| `GET` | `/api/health` | 进程存活检查，不要求外部密钥 |
-| `GET` | `/api/ready` | 配置就绪检查，密钥缺失时返回 `503` |
-
-### 行程规划
-
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| `POST` | `/api/travel-plans` | 生成旅行规划（请求 → `TravelPlanDocument`） |
-
-#### 请求示例
-
-```json
-{
-  "origin": "上海",
-  "destination": "杭州",
-  "departure_date": "2026-09-01",
-  "travelers": 2,
-  "days": 3,
-  "budget": 3000,
-  "preferences": ["亲子", "美食"]
-}
-```
-
-约束：出发地/目的地去除首尾空白；日期不得早于今天；人数 1—20；天数 1—14（默认 3）；预算 0—200000；偏好最多 12 项。住宿晚数由服务端按 `max(days - 1, 0)` 派生，客户端不能提交 `nights`。
-
-#### 响应示例（精简形状）
-
-```json
-{
-  "request_id": "550e8400-e29b-41d4-a716-446655440000",
-  "trace_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "success",
-  "itinerary": {
-    "weather": {"status": "success", "data": {"destination": "杭州"}},
-    "route": {"status": "success", "data": {"daily_areas": [{"day": 1, "area": "西湖"}]}},
-    "lodging": {"status": "success", "data": {"nights": 2, "recommended_area": "西湖周边"}},
-    "food": {"status": "success", "data": {"daily_food": [{"day": 1, "area": "西湖"}]}}
-  },
-  "markdown": "# 旅行计划\n",
-  "sources": [],
-  "warnings": [],
-  "degraded_agents": []
-}
-```
-
-页面不展示 JSON 源码。浏览器读取响应后只展示 Markdown 正文、待核验事项、来源更新时间和降级说明；结构化 JSON 仅作为 API 消费者与测试使用。
-
-错误：`422` 参数不符合合同；`500` 服务端未预期错误（对外统一为「旅行规划暂时不可用」）。
-
-### 文档库
-
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| `POST` | `/api/documents` | 单文档上传（`202`，后台异步处理） |
-| `POST` | `/api/documents/batch` | 批量上传（multipart，默认最多 10 份，范围 1—20） |
-| `GET` | `/api/documents` | 列出所有文档记录 |
-| `GET` | `/api/documents/{id}` | 查看单个文档记录 |
-| `GET` | `/api/documents/{id}/chunks` | 查看文档内容块 |
-| `DELETE` | `/api/documents/{id}` | 删除文档（含向量与物理文件） |
-
-文档仅接受 MIME 与后缀一致、文件魔数有效的 PDF 与 DOCX；批量上传响应按 `index` 逐项返回 `accepted` / `rejected` / `unavailable` 状态。
-
-### 知识检索
-
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| `POST` | `/api/knowledge-search` | 混合检索 + 可选 DeepSeek 润色 + 保存记录 |
-| `GET` | `/api/knowledge-records` | 列出查询记录（仅含已生成回答） |
-| `DELETE` | `/api/knowledge-records/{id}` | 删除单条记录 |
-| `DELETE` | `/api/knowledge-records` | 清空所有记录 |
-| `POST` | `/api/knowledge-records/{id}/rating` | 对记录赞 / 踩 |
-| `GET` | `/api/knowledge-stats` | 评价统计（按文档 / 地区） |
-
-### 门票与酒店
-
-| 方法 | 路径 | 用途 | 模式 |
-| --- | --- | --- | --- |
-| `GET` | `/api/fliggy/status` | 检查门票服务可用性 | — |
-| `POST` | `/api/fliggy/tickets/search` | 门票只读文本检索 | 门票 |
-| `POST` | `/api/fliggy/hotels/search` | 飞猪 TOP 酒店低价查询 | 酒店（企业） |
-| `POST` | `/api/fliggy/hotels/recommend` | FlyAI 酒店 + 高德 POI 并列推荐 | 酒店（个人） |
-
-酒店请求体示例（`/hotels/recommend`）：
-
-```json
-{
-  "city_name": "杭州",
-  "check_in": "2026-09-01",
-  "check_out": "2026-09-02",
-  "poi_name": "西湖",
-  "sort": "rate_desc",
-  "max_price": 500,
-  "limit": 10
-}
-```
-
-错误语义：`422` 参数不合法；`503` 功能未配置 / 开关关闭 / 缺密钥；`502` FlyAI 上游受控错误（仅返回受控错误码与 `trace_id`）。
+项目接口由前端和后端内部协同使用，README 不展开 API 路径与请求细节。
 
 ---
 
@@ -469,7 +337,7 @@ POST /api/fliggy/hotels/recommend
 ### 前端安全
 - Markdown 先由 `marked.parse` 转换，再由 `DOMPurify.sanitize` 净化，防 XSS（跨站脚本攻击）；配置 `FORBID_TAGS` 禁止 `script` / `style` / `svg` / `math`，配置 `FORBID_ATTR` 禁止 `on*` 事件属性。
 - 列表与错误文字使用 `textContent` / `replaceChildren` 渲染，不把响应 JSON 序列化为页面原文；酒店 / 门票供应商字段一律 `textContent` / `createElement`。
-- 前端只调用相对路径 `/api/...`，不携带任何服务端密钥；第三方库（marked、DOMPurify）为本地固定版本，不从 CDN 加载。
+- 前端不携带任何服务端密钥；第三方库（marked、DOMPurify）为本地固定版本，不从 CDN 加载。
 - 图片与详情链接仅允许 HTTPS（图片加载失败自动隐藏）；本地依赖版本与 SHA-256 见 `frontend/vendor/THIRD_PARTY_NOTICES.md`。
 
 ### 响应头与 CORS
@@ -546,7 +414,7 @@ docs/
 
 部署包必须同时包含后端与前端静态目录：`backend/`（应用、依赖、配置模板）与 `frontend/`（`index.html`、`app.js`、`styles.css`、`vendor/`）。FastAPI 从 `backend/app/main.py` 的上级目录定位 `frontend`；只打包后端会导致 API 可用但页面根路径 `404`。
 
-生产环境使用外部进程管理器运行 Uvicorn，注入密钥与配置环境变量，不提交 `.env`。上线前验证 `/api/health`、`/api/ready`、页面资源与一次脱敏 API 请求，并限制日志访问权限。
+生产环境使用外部进程管理器运行 Uvicorn，注入密钥与配置环境变量，不提交 `.env`，并限制日志访问权限。
 
 ---
 
@@ -556,7 +424,7 @@ docs/
 | --- | --- |
 | 页面打不开或根路径 `404` | 确认从仓库根目录启动，`frontend/index.html` 存在；不要把 `--app-dir` 指向 `frontend` |
 | 启动报 `ModuleNotFoundError: app` | 设置 `$env:PYTHONPATH = "$PWD\backend"`，或按示例使用 `--app-dir backend` |
-| `/api/health` 正常、`/api/ready` 返回 `503` | 检查 `backend/.env` 是否包含非空 `HEWEATHER_API_KEY` 与 `AMAP_API_KEY` |
+| 服务提示配置不完整 | 检查 `backend/.env` 是否包含非空 `HEWEATHER_API_KEY` 与 `AMAP_API_KEY` |
 | 规划返回 `degraded` | 查看页面「待核验事项」和「降级说明」；确认上游网络、密钥、配额与熔断状态 |
 | 规划返回 `422` | 对照请求合同检查地点、日期、人数、天数、预算与偏好；未知字段会被拒绝 |
 | 规划返回 `500` | 查看服务端受控日志中的请求标识，检查编排器与配置；客户端不会收到原始堆栈 |

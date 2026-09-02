@@ -15,6 +15,8 @@
   const queryInput = document.getElementById("home-query");
   const status = document.getElementById("home-status");
   const error = document.getElementById("home-error");
+  const planSubmit = document.getElementById("plan-submit");
+  const planProgress = document.getElementById("plan-progress");
   const taskView = document.getElementById("view-task");
   const workspace = document.getElementById("workspace");
   const regionInput = document.getElementById("home-region-input");
@@ -54,6 +56,7 @@
   let sequence = 0;
   let currentId = null;
   let currentSavedPlan = null;
+  let revisionSubmitting = false;
   let pendingSavedPlanDelete = null;
   let historyCollapsed = false;
   let pendingDeleteId = null;
@@ -207,7 +210,7 @@
     appendMetadata(travelContent, documentData);
     error.hidden = true;
     status.textContent = task.status === "failed" ? "规划生成失败，页面内容仅供核验。" : task.status === "degraded" ? "规划已生成，部分信息需要核验。" : documentData.status === "success" ? "规划已生成。" : "规划状态无法确认，请核验页面内容。";
-    travelMask.classList.add("show");
+    if (activeView === "plan") travelMask.classList.add("show");
     renderNav();
   }
 
@@ -262,6 +265,7 @@
     const generation = ++requestGeneration;
     status.textContent = "正在理解你的旅行需求…";
     error.hidden = true;
+    planSubmit.disabled = true;
     const task = { id: `t${++sequence}`, origin: "待解析", destination: "待解析", query: queryInput.value.trim(), status: "pending", preview: "处理中…", vote: null };
     tasks.push(task);
     currentId = task.id;
@@ -306,18 +310,20 @@
       if (message.includes("必填项") || message.includes("不明确")) window.alert(message);
       showView("plan");
     } finally {
-      if (generation === requestGeneration) requestController = null;
+      if (generation === requestGeneration) {
+        requestController = null;
+        planSubmit.disabled = false;
+        if (task.status !== "pending") planProgress.hidden = true;
+      }
     }
   }
 
   function renderProcessing(task) {
-    travelTitle.textContent = `${task.origin} → ${task.destination} · 出行规划`;
-    travelContent.replaceChildren();
-    const card = document.createElement("div");
-    card.className = "message";
+    planProgress.replaceChildren();
+    planProgress.hidden = false;
     const title = document.createElement("div");
-    title.className = "msg-title";
-    title.textContent = `${task.origin} → ${task.destination} 完整方案`;
+    title.className = "plan-progress-title";
+    title.textContent = `${task.origin} → ${task.destination} 正在生成攻略`;
     const steps = document.createElement("div");
     steps.className = "proc-steps";
     ["理解需求，扩写预测", "多路检索 / 生成规划要点", "组装完整方案"].forEach((label, index) => {
@@ -326,9 +332,7 @@
       step.textContent = `${index + 1}. ${label}…`;
       steps.appendChild(step);
     });
-    card.append(title, steps);
-    travelContent.appendChild(card);
-    travelMask.classList.add("show");
+    planProgress.append(title, steps);
   }
 
   function animateStats() {
@@ -777,9 +781,17 @@
     const submit = document.getElementById("plan-revision-submit");
     panel.hidden = false;
     summary.textContent = `已选择：${plan.query || "未命名方案"}（版本 v${plan.version}）`;
-    submit.disabled = false;
+    updateRevisionSubmitState();
+    document.getElementById("plan-revision-step").textContent = "第 2 步：填写修订要求";
     document.getElementById("plan-action-status").textContent = "已选择方案，请输入修订要求。";
     loadSavedPlans();
+  }
+
+  function updateRevisionSubmitState() {
+    const revisionQuery = document.getElementById("plan-revision-query");
+    const revisionSubmit = document.getElementById("plan-revision-submit");
+    if (!revisionQuery || !revisionSubmit) return;
+    revisionSubmit.disabled = !currentSavedPlan || !revisionQuery.value.trim() || revisionSubmitting;
   }
 
   async function openSavedPlan(planId) {
@@ -796,8 +808,9 @@
     const statusElement = document.getElementById("plan-action-status");
     const submit = document.getElementById("plan-revision-submit");
     if (!currentSavedPlan) { statusElement.textContent = "请先选择一个要修订的方案。"; return; }
-    if (!query) { statusElement.textContent = "请填写具体的修订要求。"; return; }
+    if (!query) { statusElement.textContent = "请填写具体的修订要求。"; updateRevisionSubmitState(); return; }
     submit.disabled = true;
+    revisionSubmitting = true;
     statusElement.textContent = "AI 正在生成修订方案…";
     try {
       const response = await fetch(`/api/travel-plans/saved/${encodeURIComponent(currentSavedPlan.plan_id)}/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, version: currentSavedPlan.version }) });
@@ -812,7 +825,8 @@
     } catch (requestError) {
       statusElement.textContent = requestError.message || "修订失败，请稍后重试。";
     } finally {
-      submit.disabled = false;
+      revisionSubmitting = false;
+      updateRevisionSubmitState();
     }
   }
 
@@ -1677,6 +1691,7 @@
   newPlanButton.addEventListener("click", startNewPlan);
   form.addEventListener("submit", submitPlan);
   document.getElementById("plan-revision-submit")?.addEventListener("click", submitPlanRevision);
+  document.getElementById("plan-revision-query")?.addEventListener("input", updateRevisionSubmitState);
   ticketForm.addEventListener("submit", submitTicketSearch);
   hotelForm.addEventListener("submit", submitHotelSearch);
   documentUpload.addEventListener("change", uploadDocument);

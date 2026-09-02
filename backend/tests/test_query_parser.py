@@ -59,9 +59,24 @@ class PromptRecordingClient:
         return '{"preferences": []}'
 
 
+class CompleteFieldsClient:
+    async def chat_completion(self, system_prompt: str, user_prompt: str) -> str:
+        return '{"origin":"北京","destination":"成都","departure_date":"2026-09-10","travelers":3,"days":3,"preferences":[]}'
+
+
+class NonTemplateLocationClient:
+    async def chat_completion(self, system_prompt: str, user_prompt: str) -> str:
+        return '{"origin":"北京","destination":"三亚","departure_date":"2026-09-10","travelers":3,"days":3,"preferences":[]}'
+
+
+class ModelAuthoritativeClient:
+    async def chat_completion(self, system_prompt: str, user_prompt: str) -> str:
+        return '{"origin":"广州","destination":"三亚","departure_date":"2026-09-10","travelers":3,"days":3,"preferences":[]}'
+
+
 @pytest.mark.asyncio
 async def test_parse_extracts_complete_travel_fields_without_year():
-    parser = TravelQueryParser(StaticClient(), today=date(2026, 9, 2))
+    parser = TravelQueryParser(CompleteFieldsClient(), today=date(2026, 9, 2))
 
     result = await parser.parse(
         "2位成人带1个孩子，9月10日从北京到成都玩3天,不吃辣，行程节奏不要太赶。"
@@ -75,6 +90,37 @@ async def test_parse_extracts_complete_travel_fields_without_year():
     assert result.preferences == ()
     assert result.profile.verification_notes == ("偏好理解暂不可用，请在生成方案前核验偏好要求。",)
     assert result.missing_fields == ()
+
+
+@pytest.mark.asyncio
+async def test_parse_uses_model_for_non_template_location_phrase():
+    parser = TravelQueryParser(NonTemplateLocationClient(), today=date(2026, 9, 2))
+
+    result = await parser.parse("两个成人带一个孩子，9月10日从北京去往三亚游玩3天")
+
+    assert result.origin == "北京"
+    assert result.destination == "三亚"
+    assert result.missing_fields == ()
+
+
+@pytest.mark.asyncio
+async def test_parse_treats_model_fields_as_authoritative():
+    parser = TravelQueryParser(ModelAuthoritativeClient(), today=date(2026, 9, 2))
+
+    result = await parser.parse("两个成人带一个孩子，9月10日从北京到三亚玩3天")
+
+    assert result.origin == "广州"
+
+
+@pytest.mark.asyncio
+async def test_parse_does_not_guess_locations_when_model_is_unavailable():
+    parser = TravelQueryParser(FailingClient(), today=date(2026, 9, 2))
+
+    result = await parser.parse("9月10日从北京去往三亚游玩3天")
+
+    assert result.origin is None
+    assert result.destination is None
+    assert result.missing_fields == ("origin", "destination", "departure_date", "travelers", "days")
 
 
 @pytest.mark.asyncio
@@ -95,17 +141,17 @@ async def test_parse_preserves_model_extracted_unlisted_preferences_in_profile()
 
 
 @pytest.mark.asyncio
-async def test_parse_preserves_rule_values_when_model_fails():
+async def test_parse_returns_all_required_fields_missing_when_model_fails():
     parser = TravelQueryParser(FailingClient(), today=date(2026, 9, 2))
 
     result = await parser.parse("9月10日从北京到成都玩3天")
 
-    assert result.origin == "北京"
-    assert result.destination == "成都"
-    assert result.departure_date == date(2026, 9, 10)
-    assert result.days == 3
+    assert result.origin is None
+    assert result.destination is None
+    assert result.departure_date is None
+    assert result.days is None
     assert result.travelers is None
-    assert result.missing_fields == ("travelers",)
+    assert result.missing_fields == ("origin", "destination", "departure_date", "travelers", "days")
 
 
 @pytest.mark.asyncio
@@ -116,7 +162,7 @@ async def test_parse_preserves_profile_when_model_base_field_is_invalid():
         "2位成人带1个孩子，9月10日从北京到成都玩3天，不吃辣，行程节奏不要太赶。"
     )
 
-    assert result.travelers == 3
+    assert result.travelers is None
     assert result.preferences == ("不吃辣",)
     assert result.profile.summary == "适合亲子的轻松行程"
     assert result.profile.preferences[0].instruction == "不吃辣"
