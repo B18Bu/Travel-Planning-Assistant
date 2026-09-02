@@ -31,37 +31,37 @@ class TravelQueryParser:
         try:
             content = await self.client.chat_completion(
                 "你是旅行需求信息抽取器。只输出 JSON，不要 Markdown 或解释。日期使用 YYYY-MM-DD。无法确定的字段填 null。",
-                json.dumps({"query": query, "fields": ["origin", "destination", "departure_date", "travelers", "days", "budget", "preferences"]}, ensure_ascii=False),
+                json.dumps({"query": query, "fields": ["origin", "destination", "departure_date", "travelers", "days", "budget", "preferences", "preference_profile"], "preference_profile_schema": {"summary": "string|null", "companions": [{"type": "string", "count": "integer"}], "preferences": [{"category": "string", "priority": "must|prefer|avoid", "instruction": "string", "exclude_terms": ["string"], "verification_required": "boolean"}], "agent_guidance": {"route": ["string"], "food": ["string"], "lodging": ["string"], "summary": ["string"]}, "verification_notes": ["string"]}}, ensure_ascii=False),
             )
-            model_result = TravelQueryParseResponse.model_validate(self._json_payload(content))
+            payload = self._json_payload(content)
+            profile = payload.pop(
+                "preference_profile",
+                {"verification_notes": ["偏好理解暂不可用，请在生成方案前核验偏好要求。"]},
+            )
+            model_result = TravelQueryParseResponse.model_validate({**payload, "profile": profile})
         except Exception:
-            model_result = TravelQueryParseResponse()
+            model_result = TravelQueryParseResponse(
+                profile=TravelPreferenceProfile(
+                    verification_notes=("偏好理解暂不可用，请在生成方案前核验偏好要求。",)
+                )
+            )
         values = {
             name: rule_values[name] if rule_values[name] is not None else getattr(model_result, name)
             for name in self._required_fields
         }
-        preferences = tuple(dict.fromkeys((*rule_values["preferences"], *model_result.preferences)))
+        preferences = tuple(dict.fromkeys(model_result.preferences))
         return TravelQueryParseResponse(
             **values,
             budget=model_result.budget,
             preferences=preferences,
-            profile=self._profile(query, preferences),
+            profile=model_result.profile,
             missing_fields=self._missing_fields(values),
             ambiguous_fields=model_result.ambiguous_fields,
         )
 
     def _rule_values(self, query: str) -> dict[str, object]:
         values: dict[str, object] = {name: None for name in self._required_fields}
-        values["preferences"] = tuple(
-            label
-            for label, phrases in (
-                ("不吃辣", ("不吃辣", "不要辣", "不吃辛辣")),
-                ("行程不要太赶", ("行程不要太赶", "不要太赶", "轻松游")),
-                ("清真", ("清真", "清真餐")),
-                ("不吃猪肉", ("不吃猪肉", "不吃猪", "忌猪肉")),
-            )
-            if any(phrase in query for phrase in phrases)
-        )
+        values["preferences"] = ()
         location = self._field_patterns["origin_destination"].search(query)
         if location:
             values["origin"] = location.group("origin")
@@ -77,24 +77,6 @@ class TravelQueryParser:
             total = sum(party_counts)
             values["travelers"] = total if 1 <= total <= 20 else None
         return values
-
-    @staticmethod
-    def _profile(query: str, preferences: tuple[str, ...]) -> TravelPreferenceProfile:
-        has_children = any(word in query for word in ("儿童", "孩子", "小孩", "婴儿"))
-        has_elderly = "老人" in query
-        no_spicy = "不吃辣" in preferences
-        no_pork = "不吃猪肉" in preferences
-        halal = "清真" in preferences
-        return TravelPreferenceProfile(
-            has_children=has_children,
-            has_elderly=has_elderly,
-            low_intensity=has_elderly or "行程不要太赶" in preferences,
-            child_friendly=has_children,
-            no_spicy=no_spicy,
-            no_pork=no_pork,
-            halal=halal,
-            verification_notes=("请向商家确认是否清真、是否含猪肉及是否可调辣度。",) if halal else (),
-        )
 
     def _parse_date(self, match: re.Match[str]) -> date | None:
         year = int(match.group("year") or self.today.year)

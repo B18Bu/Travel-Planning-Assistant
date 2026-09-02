@@ -428,16 +428,33 @@ class TravelPlanDocument(StrictModel):
 
 
 class TravelPreferenceProfile(StrictModel):
-    """由旅行描述确定性构建的偏好约束。"""
+    """由模型提取并传递给专业 Agent 的偏好画像。"""
 
-    has_children: bool = False
-    has_elderly: bool = False
-    low_intensity: bool = False
-    child_friendly: bool = False
-    no_spicy: bool = False
-    no_pork: bool = False
-    halal: bool = False
+    summary: NonEmptyText | None = None
+    companions: tuple["TravelCompanion", ...] = Field(max_length=20, default=())
+    preferences: tuple["PreferenceItem", ...] = Field(max_length=20, default=())
+    agent_guidance: "AgentGuidance" = Field(default_factory=lambda: AgentGuidance())
     verification_notes: tuple[NonEmptyText, ...] = ()
+
+
+class TravelCompanion(StrictModel):
+    type: NonEmptyText
+    count: int = Field(ge=1, le=20)
+
+
+class PreferenceItem(StrictModel):
+    category: NonEmptyText
+    priority: Literal["must", "prefer", "avoid"]
+    instruction: NonEmptyText
+    exclude_terms: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+    verification_required: bool = False
+
+
+class AgentGuidance(StrictModel):
+    route: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+    food: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+    lodging: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
+    summary: tuple[NonEmptyText, ...] = Field(max_length=20, default=())
 
 
 class TravelPlanRequest(StrictModel):

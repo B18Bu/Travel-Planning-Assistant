@@ -15,6 +15,23 @@ class FailingClient:
         raise RuntimeError("模型不可用")
 
 
+class ProfileClient:
+    async def chat_completion(self, system_prompt: str, user_prompt: str) -> str:
+        return '''{
+          "preferences": [],
+          "preference_profile": {
+            "summary": "适合亲子摄影的舒缓行程",
+            "companions": [{"type": "child", "count": 1}],
+            "preferences": [
+              {"category": "experience", "priority": "prefer", "instruction": "优先亲子互动体验", "exclude_terms": [], "verification_required": false},
+              {"category": "experience", "priority": "prefer", "instruction": "摄影友好", "exclude_terms": [], "verification_required": false}
+            ],
+            "agent_guidance": {"route": ["每日安排两个主要时段"], "food": [], "lodging": [], "summary": ["说明摄影偏好如何被响应"]},
+            "verification_notes": []
+          }
+        }'''
+
+
 @pytest.mark.asyncio
 async def test_parse_extracts_complete_travel_fields_without_year():
     parser = TravelQueryParser(StaticClient(), today=date(2026, 9, 2))
@@ -28,26 +45,25 @@ async def test_parse_extracts_complete_travel_fields_without_year():
     assert result.departure_date == date(2026, 9, 10)
     assert result.travelers == 3
     assert result.days == 3
-    assert result.preferences == ("不吃辣", "行程不要太赶")
+    assert result.preferences == ()
+    assert result.profile.verification_notes == ("偏好理解暂不可用，请在生成方案前核验偏好要求。",)
     assert result.missing_fields == ()
 
 
 @pytest.mark.asyncio
-async def test_parse_builds_profile_for_elderly_children_and_dietary_constraints():
-    parser = TravelQueryParser(StaticClient(), today=date(2026, 9, 2))
+async def test_parse_preserves_model_extracted_unlisted_preferences_in_profile():
+    parser = TravelQueryParser(ProfileClient(), today=date(2026, 9, 2))
 
     result = await parser.parse(
-        "两位成人带一个孩子和一位老人，9月10日从北京到成都玩3天，清真不吃猪肉，不吃辣，行程不要太赶。"
+        "两位成人带一个孩子，9月10日从北京到成都玩3天，想拍照也希望孩子玩得开心。"
     )
 
-    assert result.preferences == ("不吃辣", "行程不要太赶", "清真", "不吃猪肉")
-    assert result.profile.has_children is True
-    assert result.profile.has_elderly is True
-    assert result.profile.low_intensity is True
-    assert result.profile.child_friendly is True
-    assert result.profile.no_spicy is True
-    assert result.profile.no_pork is True
-    assert result.profile.halal is True
+    assert result.profile.summary == "适合亲子摄影的舒缓行程"
+    assert tuple(item.instruction for item in result.profile.preferences) == (
+        "优先亲子互动体验",
+        "摄影友好",
+    )
+    assert result.profile.agent_guidance.route == ("每日安排两个主要时段",)
 
 
 @pytest.mark.asyncio
