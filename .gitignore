@@ -25,6 +25,7 @@ skills/
 skills-lock.json
 docs/
 practice/
+dogfood-output/
 *.log
 
 # Office 打开文档时生成的锁定临时文件，禁止提交
