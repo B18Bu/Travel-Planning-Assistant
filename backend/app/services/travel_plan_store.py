@@ -34,6 +34,15 @@ class TravelPlanStore:
         with self.lock:
             return next((item for item in self._read() if item.get("plan_id") == plan_id), None)
 
+    def delete(self, plan_id: str) -> bool:
+        with self.lock:
+            records = self._read()
+            retained = [item for item in records if item.get("plan_id") != plan_id]
+            if len(retained) == len(records):
+                return False
+            self._write(retained)
+            return True
+
     def revise(self, plan_id: str, version: int, query: str, request: object, document: object) -> dict | None:
         with self.lock:
             records = self._read()

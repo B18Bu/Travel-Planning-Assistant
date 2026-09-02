@@ -38,6 +38,45 @@ def test_food_candidate_is_removed_when_model_exclusion_term_matches_any_candida
     assert FoodAgent._is_allowed_by_profile(candidate, profile) is False
 
 
+def test_food_candidate_with_spicy_cuisine_label_is_removed_when_profile_excludes_spice():
+    candidate = FoodCandidate(
+        poi=PoiCandidate(name="川味馆", category="餐饮服务", source_ids=("test",)),
+        specialties=("四川菜(川菜)",),
+    )
+    profile = TravelPreferenceProfile(
+        preferences=(
+            PreferenceItem(
+                category="diet",
+                priority="must",
+                instruction="不吃辣",
+                exclude_terms=("辣",),
+            ),
+        ),
+        agent_guidance=AgentGuidance(),
+    )
+
+    assert FoodAgent._is_allowed_by_profile(candidate, profile) is False
+
+
+def test_food_candidate_is_removed_when_avoid_preference_has_exclusion_term():
+    candidate = FoodCandidate(
+        poi=PoiCandidate(name="麻辣小馆", category="餐饮服务", source_ids=("test",)),
+    )
+    profile = TravelPreferenceProfile(
+        preferences=(
+            PreferenceItem(
+                category="diet",
+                priority="avoid",
+                instruction="不吃辣",
+                exclude_terms=("麻辣",),
+            ),
+        ),
+        agent_guidance=AgentGuidance(),
+    )
+
+    assert FoodAgent._is_allowed_by_profile(candidate, profile) is False
+
+
 def test_daily_food_plan_keeps_flyai_reference_separate_from_poi_candidates():
     plan = DailyFoodPlan(
         day=1,

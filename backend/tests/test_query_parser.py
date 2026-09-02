@@ -50,6 +50,15 @@ class ProfileWithInvalidBaseFieldClient:
         }'''
 
 
+class PromptRecordingClient:
+    def __init__(self):
+        self.system_prompt = ""
+
+    async def chat_completion(self, system_prompt: str, user_prompt: str) -> str:
+        self.system_prompt = system_prompt
+        return '{"preferences": []}'
+
+
 @pytest.mark.asyncio
 async def test_parse_extracts_complete_travel_fields_without_year():
     parser = TravelQueryParser(StaticClient(), today=date(2026, 9, 2))
@@ -112,3 +121,14 @@ async def test_parse_preserves_profile_when_model_base_field_is_invalid():
     assert result.profile.summary == "适合亲子的轻松行程"
     assert result.profile.preferences[0].instruction == "不吃辣"
     assert result.profile.verification_notes == ("确认餐厅口味与儿童餐",)
+
+
+@pytest.mark.asyncio
+async def test_parse_prompt_requires_poi_exclusion_terms_for_no_spice_preference():
+    client = PromptRecordingClient()
+
+    await TravelQueryParser(client, today=date(2026, 9, 2)).parse("9月10日从北京到成都玩3天，不吃辣")
+
+    assert "川菜" in client.system_prompt
+    assert "POI" in client.system_prompt
+    assert "priority 必须为 must" in client.system_prompt

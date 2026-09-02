@@ -195,6 +195,29 @@ async def test_travel_plan_hides_unexpected_errors():
 
 
 @pytest.mark.asyncio
+async def test_delete_saved_travel_plan_returns_no_content_and_uses_store():
+    app = create_app(orchestrator=AsyncMock())
+
+    class Store:
+        def __init__(self):
+            self.deleted = []
+
+        def delete(self, plan_id):
+            self.deleted.append(plan_id)
+            return plan_id == "saved-plan"
+
+    store = Store()
+    app.state.travel_plan_store = store
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://testserver") as client:
+        response = await client.delete("/api/travel-plans/saved/saved-plan")
+        missing = await client.delete("/api/travel-plans/saved/missing-plan")
+
+    assert response.status_code == 204
+    assert missing.status_code == 404
+    assert store.deleted == ["saved-plan", "missing-plan"]
+
+
+@pytest.mark.asyncio
 async def test_create_app_injects_settings_into_orchestrator_builder(monkeypatch):
     from app.config import Settings
     import app.main as main_module

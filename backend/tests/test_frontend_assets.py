@@ -647,3 +647,18 @@ def test_frontend_hotel_does_not_promise_booking_or_inventory():
     assert "库存" not in hotel_html
     assert "预订" not in hotel_html
     assert "下单" not in hotel_html
+
+
+def test_frontend_saved_plans_require_selection_before_revision_and_offer_deletion():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="selected-plan-summary"' in html
+    assert 'id="plan-revision-panel"' in html
+    assert 'id="plan-delete-mask"' in html
+    assert 'id="plan-revision-submit"' in html
+    assert "function selectSavedPlan(plan)" in script
+    assert "function confirmSavedPlanDelete(plan)" in script
+    assert 'method: "DELETE"' in script
+    revision_block = script[script.index("async function submitPlanRevision"):script.index("function renderNav")]
+    assert 'showView("task")' not in revision_block

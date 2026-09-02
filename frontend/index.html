@@ -206,7 +206,17 @@
 
       <!-- 任务结果视图 -->
       <section id="view-plans" class="view">
-        <div class="feature-page"><div class="feature-page-head"><div>Saved Plans</div><h2>方案制定</h2><p>选择已保存的方案，并通过 AI 客服提出修改要求。</p></div><div id="saved-plans" class="saved-plans"><p>暂无已保存方案。</p></div><textarea id="plan-revision-query" rows="3" maxlength="2000" placeholder="输入希望修改的内容"></textarea><button id="plan-revision-submit" class="btn-primary" type="button">提交修改</button></div>
+        <div class="feature-page plan-management-page">
+          <div class="feature-page-head"><div>Saved Plans</div><h2>方案制定</h2><p>先选择要调整的已保存方案，再用自然语言说明修改要求。</p></div>
+          <p id="plan-action-status" class="plan-action-status" role="status" aria-live="polite"></p>
+          <div id="saved-plans" class="saved-plans" aria-label="已保存方案"><p>暂无已保存方案。</p></div>
+          <section id="plan-revision-panel" class="plan-revision-panel" hidden aria-labelledby="plan-revision-title">
+            <div class="plan-revision-head"><div><h3 id="plan-revision-title">修订所选方案</h3><p id="selected-plan-summary">请先从上方选择一个方案。</p></div></div>
+            <label for="plan-revision-query">告诉 AI 你希望怎样调整</label>
+            <textarea id="plan-revision-query" rows="4" maxlength="2000" placeholder="例如：第二天上午改为室内亲子活动，午餐继续保持不辣。"></textarea>
+            <div class="plan-revision-actions"><button id="plan-revision-submit" class="btn-primary" type="button" disabled>生成修订方案</button></div>
+          </section>
+        </div>
       </section>
       <section id="view-task" class="view"></section>
 
@@ -356,6 +366,15 @@
       <button class="btn-ghost" onclick="closeConfirm()">取消</button>
       <button class="btn-danger" onclick="doDelete()">删除</button>
     </div>
+  </div>
+</div>
+
+<!-- 已保存方案删除确认弹窗 -->
+<div class="modal-mask" id="plan-delete-mask" onclick="closeSavedPlanDelete(event)">
+  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="plan-delete-title" onclick="event.stopPropagation()">
+    <div class="modal-head"><span class="modal-title" id="plan-delete-title">删除方案</span><button class="modal-close" type="button" onclick="closeSavedPlanDelete()" aria-label="关闭">✕</button></div>
+    <div class="modal-body"><p class="confirm-text" id="plan-delete-text">确定删除这个已保存方案吗？删除后不可恢复。</p></div>
+    <div class="modal-foot"><button class="btn-ghost" type="button" onclick="closeSavedPlanDelete()">取消</button><button class="btn-danger" type="button" onclick="deleteSavedPlan()">删除方案</button></div>
   </div>
 </div>
 

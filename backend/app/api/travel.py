@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.models.planning import TravelPlanRevisionRequest, TravelQueryParseRequest, TravelQueryParseResponse
 from app.models.travel import TravelPlanDocument, TravelPlanRequest
@@ -51,6 +51,13 @@ async def get_saved_travel_plan(plan_id: str, request: Request) -> dict:
     if record is None:
         raise HTTPException(status_code=404, detail="方案不存在")
     return record
+
+
+@router.delete("/travel-plans/saved/{plan_id}", status_code=204)
+async def delete_saved_travel_plan(plan_id: str, request: Request) -> Response:
+    if not request.app.state.travel_plan_store.delete(plan_id):
+        raise HTTPException(status_code=404, detail="方案不存在")
+    return Response(status_code=204)
 
 
 @router.post("/travel-plans/saved/{plan_id}/revisions")

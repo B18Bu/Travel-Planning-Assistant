@@ -54,6 +54,7 @@
   let sequence = 0;
   let currentId = null;
   let currentSavedPlan = null;
+  let pendingSavedPlanDelete = null;
   let historyCollapsed = false;
   let pendingDeleteId = null;
   let requestController = null;
@@ -745,14 +746,40 @@
       container.replaceChildren();
       if (!plans.length) { container.textContent = "暂无已保存方案。"; return; }
       plans.forEach((plan) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "saved-plan-item";
-        button.textContent = `${plan.query || "未命名方案"} · v${plan.version}`;
-        button.addEventListener("click", () => openSavedPlan(plan.plan_id));
-        container.appendChild(button);
+        const item = document.createElement("article");
+        item.className = "saved-plan-item";
+        const select = document.createElement("button");
+        select.type = "button";
+        select.className = "saved-plan-select";
+        select.setAttribute("aria-pressed", String(currentSavedPlan?.plan_id === plan.plan_id));
+        const title = document.createElement("strong");
+        title.textContent = plan.query || "未命名方案";
+        const meta = document.createElement("span");
+        meta.textContent = `版本 v${plan.version}`;
+        select.append(title, meta);
+        select.addEventListener("click", () => selectSavedPlan(plan));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "saved-plan-delete";
+        remove.textContent = "删除";
+        remove.setAttribute("aria-label", `删除方案：${plan.query || "未命名方案"}`);
+        remove.addEventListener("click", () => confirmSavedPlanDelete(plan));
+        item.append(select, remove);
+        container.appendChild(item);
       });
     } catch (requestError) { container.textContent = requestError.message; }
+  }
+
+  function selectSavedPlan(plan) {
+    currentSavedPlan = plan;
+    const panel = document.getElementById("plan-revision-panel");
+    const summary = document.getElementById("selected-plan-summary");
+    const submit = document.getElementById("plan-revision-submit");
+    panel.hidden = false;
+    summary.textContent = `已选择：${plan.query || "未命名方案"}（版本 v${plan.version}）`;
+    submit.disabled = false;
+    document.getElementById("plan-action-status").textContent = "已选择方案，请输入修订要求。";
+    loadSavedPlans();
   }
 
   async function openSavedPlan(planId) {
@@ -766,13 +793,60 @@
 
   async function submitPlanRevision() {
     const query = document.getElementById("plan-revision-query")?.value.trim();
-    if (!currentSavedPlan || !query) return;
-    const response = await fetch(`/api/travel-plans/saved/${encodeURIComponent(currentSavedPlan.plan_id)}/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, version: currentSavedPlan.version }) });
-    if (!response.ok) { window.alert(await nonOkMessage(response)); return; }
-    currentSavedPlan = await response.json();
-    const task = tasks.find((item) => item.id === currentSavedPlan.plan_id);
-    if (task) { task.document = currentSavedPlan.document; task.origin = currentSavedPlan.request.origin; task.destination = currentSavedPlan.request.destination; renderDocument(task, task.document); }
-    document.getElementById("plan-revision-query").value = "";
+    const statusElement = document.getElementById("plan-action-status");
+    const submit = document.getElementById("plan-revision-submit");
+    if (!currentSavedPlan) { statusElement.textContent = "请先选择一个要修订的方案。"; return; }
+    if (!query) { statusElement.textContent = "请填写具体的修订要求。"; return; }
+    submit.disabled = true;
+    statusElement.textContent = "AI 正在生成修订方案…";
+    try {
+      const response = await fetch(`/api/travel-plans/saved/${encodeURIComponent(currentSavedPlan.plan_id)}/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, version: currentSavedPlan.version }) });
+      if (!response.ok) throw new Error(await nonOkMessage(response));
+      currentSavedPlan = await response.json();
+      const task = tasks.find((item) => item.id === currentSavedPlan.plan_id);
+      if (task) { task.document = currentSavedPlan.document; task.origin = currentSavedPlan.request.origin; task.destination = currentSavedPlan.request.destination; }
+      document.getElementById("plan-revision-query").value = "";
+      document.getElementById("selected-plan-summary").textContent = `已修订：${currentSavedPlan.query || "未命名方案"}（版本 v${currentSavedPlan.version}）`;
+      statusElement.textContent = "修订方案已生成，可继续补充修改要求。";
+      loadSavedPlans();
+    } catch (requestError) {
+      statusElement.textContent = requestError.message || "修订失败，请稍后重试。";
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  function confirmSavedPlanDelete(plan) {
+    pendingSavedPlanDelete = plan;
+    document.getElementById("plan-delete-text").textContent = `确定删除“${plan.query || "未命名方案"}”吗？删除后不可恢复。`;
+    document.getElementById("plan-delete-mask").classList.add("show");
+  }
+
+  function closeSavedPlanDelete(event) {
+    if (event && event.target !== event.currentTarget) return;
+    pendingSavedPlanDelete = null;
+    document.getElementById("plan-delete-mask").classList.remove("show");
+  }
+
+  async function deleteSavedPlan() {
+    const plan = pendingSavedPlanDelete;
+    if (!plan) return;
+    try {
+      const response = await fetch(`/api/travel-plans/saved/${encodeURIComponent(plan.plan_id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await nonOkMessage(response));
+      if (currentSavedPlan?.plan_id === plan.plan_id) {
+        currentSavedPlan = null;
+        document.getElementById("plan-revision-panel").hidden = true;
+        document.getElementById("plan-action-status").textContent = "已删除所选方案。";
+      } else {
+        document.getElementById("plan-action-status").textContent = "方案已删除。";
+      }
+      closeSavedPlanDelete();
+      await loadSavedPlans();
+      toast("方案已删除");
+    } catch (requestError) {
+      document.getElementById("plan-action-status").textContent = requestError.message || "删除失败，请稍后重试。";
+    }
   }
 
   function renderNav() {

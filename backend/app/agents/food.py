@@ -177,6 +177,7 @@ class FoodAgent:
     _GENERIC_CUISINE_LABELS = {
         "餐饮服务", "美食", "中餐厅", "西餐厅", "日餐厅", "快餐厅", "咖啡厅", "酒吧", "食堂", "小吃", "甜品", "面包店",
     }
+    _SPICY_CUISINE_TERMS = ("川菜", "四川菜", "湘菜", "赣菜", "贵州菜", "火锅", "冒菜", "串串", "麻辣烫")
 
     @classmethod
     def _specialties(cls, item: dict[str, Any]) -> tuple[str, ...]:
@@ -343,12 +344,14 @@ class FoodAgent:
         texts = (candidate.poi.name, candidate.poi.category, *candidate.poi.tags, *candidate.specialties)
         haystack = " ".join(texts).casefold()
         preferences = getattr(profile, "preferences", ())
-        exclude_terms = (
+        exclude_terms = tuple(
             term
             for preference in preferences
-            if getattr(preference, "priority", None) == "must"
+            if getattr(preference, "priority", None) in {"must", "avoid"}
             for term in getattr(preference, "exclude_terms", ())
         )
+        if any("辣" in term for term in exclude_terms):
+            exclude_terms += FoodAgent._SPICY_CUISINE_TERMS
         return not any(term.casefold() in haystack for term in exclude_terms)
 
     @staticmethod

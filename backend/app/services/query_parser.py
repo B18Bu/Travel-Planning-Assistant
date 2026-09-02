@@ -15,6 +15,13 @@ from app.services.deepseek import DeepSeekClient
 class TravelQueryParser:
     """使用大模型将自然语言旅行需求转换为受控结构。"""
 
+    _system_prompt = (
+        "你是旅行需求信息抽取器。只输出 JSON，不要 Markdown 或解释。日期使用 YYYY-MM-DD。"
+        "无法确定的字段填 null。对于硬性饮食限制，preference_profile.preferences 的 exclude_terms "
+        "必须使用可匹配餐饮 POI 名称、标签和菜系的词。若用户明确不吃辣或禁辣，"
+        "对应 preference 的 priority 必须为 must。"
+        "除辣、麻辣、辣椒、红油外，还要包含无法确认清淡做法的高辣菜系标签，例如川菜、湘菜、火锅。"
+    )
     _required_fields = ("origin", "destination", "departure_date", "travelers", "days")
     _model_fields = (*_required_fields, "budget", "preferences", "ambiguous_fields")
     _number_values = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
@@ -33,7 +40,7 @@ class TravelQueryParser:
         rule_values = self._rule_values(query)
         try:
             content = await self.client.chat_completion(
-                "你是旅行需求信息抽取器。只输出 JSON，不要 Markdown 或解释。日期使用 YYYY-MM-DD。无法确定的字段填 null。",
+                self._system_prompt,
                 json.dumps({"query": query, "fields": ["origin", "destination", "departure_date", "travelers", "days", "budget", "preferences", "preference_profile"], "preference_profile_schema": {"summary": "string|null", "companions": [{"type": "string", "count": "integer"}], "preferences": [{"category": "string", "priority": "must|prefer|avoid", "instruction": "string", "exclude_terms": ["string"], "verification_required": "boolean"}], "agent_guidance": {"route": {"instructions": ["string"], "daily_primary_limit": "integer|null", "priority_terms": ["string"]}, "food": {"instructions": ["string"], "exclude_terms": ["string"], "verification_notes": ["string"]}, "lodging": ["string"], "summary": ["string"]}, "verification_notes": ["string"]}}, ensure_ascii=False),
             )
             payload = self._json_payload(content)
