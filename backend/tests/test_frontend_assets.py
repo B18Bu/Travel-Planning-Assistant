@@ -24,7 +24,7 @@ def test_frontend_sends_original_travel_query_in_json_body_not_headers():
 
     assert "X-Travel-Query" not in script
     assert "delete body.query;" in script
-    assert "JSON.stringify({ ...body, original_query: queryInput.value.trim() })" in script
+    assert "JSON.stringify({ ...body, profile: parsed.profile, original_query: queryInput.value.trim() })" in script
 
 
 def test_frontend_maps_controlled_knowledge_empty_reasons_without_exposing_backend_errors():
@@ -313,6 +313,12 @@ def test_frontend_uses_standard_json_encoding_and_validates_numeric_fields():
     assert "travelers" in app_js and "days" in app_js
     assert "setError" in app_js
     assert "encodeRequest" not in app_js
+
+
+def test_frontend_submits_model_extracted_preference_profile_with_plan_request():
+    app_js = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "profile: parsed.profile" in app_js
 
 
 def test_frontend_safely_displays_non_2xx_details_without_raw_serialization():

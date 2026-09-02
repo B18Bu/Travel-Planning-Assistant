@@ -288,7 +288,7 @@
       task.destination = parsed.destination;
       renderNav();
       const body = requestBody(new FormData(form));
-      const response = await fetch("/api/travel-plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, original_query: queryInput.value.trim() }), signal: controller.signal });
+      const response = await fetch("/api/travel-plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, profile: parsed.profile, original_query: queryInput.value.trim() }), signal: controller.signal });
       if (!response.ok) throw new Error(await nonOkMessage(response));
       const documentData = await response.json();
       if (generation !== requestGeneration) return;
