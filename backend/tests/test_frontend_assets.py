@@ -659,6 +659,8 @@ def test_frontend_saved_plans_require_selection_before_revision_and_offer_deleti
     assert 'id="plan-revision-submit"' in html
     assert "function selectSavedPlan(plan)" in script
     assert "function confirmSavedPlanDelete(plan)" in script
+    assert "window.closeSavedPlanDelete = closeSavedPlanDelete;" in script
+    assert "window.deleteSavedPlan = deleteSavedPlan;" in script
     assert 'method: "DELETE"' in script
     revision_block = script[script.index("async function submitPlanRevision"):script.index("function renderNav")]
     assert 'showView("task")' not in revision_block

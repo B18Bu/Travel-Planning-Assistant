@@ -1698,6 +1698,8 @@
   window.confirmDelete = confirmDelete;
   window.closeConfirm = closeConfirm;
   window.doDelete = doDelete;
+  window.closeSavedPlanDelete = closeSavedPlanDelete;
+  window.deleteSavedPlan = deleteSavedPlan;
   window.closeAnswerModal = closeAnswerModal;
   window.openRecordsModal = openRecordsModal;
   window.closeRecordsModal = closeRecordsModal;
