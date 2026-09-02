@@ -31,7 +31,7 @@ assert result.profile.preferences[0].instruction == "优先儿童互动体验"
 assert result.profile.preferences[1].instruction == "摄影友好"
 ```
 - [ ] 运行：`cd backend; pytest tests/test_query_parser.py -q`，预期画像属性不存在而失败。
-- [ ] 最少实现：增加冻结 `TravelPreferenceProfile`、`PreferenceItem` 与 `AgentGuidance`；在模型提示中声明 JSON Schema，在 `TravelPlanRequest` 和 `TravelQueryParseResponse` 中声明 `profile`；解析服务仅校验模型输出并将其原样传递。前端以解析响应中的 `profile` 原样提交。
+- [ ] 最少实现：增加冻结 `TravelPreferenceProfile`、`PreferenceItem`、`RouteGuidance`、`FoodGuidance` 与 `AgentGuidance`；在模型提示中声明 JSON Schema（含路线每日主活动数、候选优先词和餐饮禁止词），在 `TravelPlanRequest` 和 `TravelQueryParseResponse` 中声明 `profile`；解析服务仅校验模型输出并将其原样传递。前端以解析响应中的 `profile` 原样提交。
 ```python
 class TravelPreferenceProfile(StrictModel):
     summary: NonEmptyText | None = None

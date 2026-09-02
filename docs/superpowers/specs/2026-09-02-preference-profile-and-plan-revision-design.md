@@ -13,9 +13,9 @@
 
 新增 `TravelPreferenceProfile`，由大模型根据 `original_query` 生成受控 JSON。画像包含同行人群、任意数量的偏好项、优先级、禁止项、待确认项，以及按路线、餐饮、住宿和摘要分组的指导；不以固定的老人、儿童、清真或饮食词表作为主要理解方式。
 
-每个偏好项包含 `category`、`priority`、`instruction`、`exclude_terms` 与 `verification_required`。这使“摄影友好、少排队、素食、轮椅友好”等未预设偏好也可以传入后续 Agent。
+每个偏好项包含 `category`、`priority`、`instruction`、`exclude_terms` 与 `verification_required`。每个 Agent 指导同时包含自然语言 `instructions` 与模型提取的执行参数：路线包含 `daily_primary_limit` 与 `priority_terms`，餐饮包含 `exclude_terms` 与核验项，住宿与天气包含筛选/提醒项。这使“摄影友好、少排队、素食、轮椅友好”等未预设偏好也可以传入后续 Agent。
 
-代码只校验模型 JSON 的结构、长度和受控优先级，并对模型产生的 `exclude_terms` 做通用候选文本过滤；不对具体偏好作词表判断。模型不可用或输出不合法时保留原始描述并标记“偏好理解暂不可用”，不得臆测画像。画像加入 `TravelPlanRequest`，编排器沿用同一个请求对象传递给天气、路线、住宿、餐饮和摘要 Agent。
+代码只校验模型 JSON 的结构、长度和受控优先级，并执行模型参数给出的通用候选排序、时段限制与文本过滤；不对具体偏好作词表判断。模型不可用或输出不合法时保留原始描述并标记“偏好理解暂不可用”，不得臆测画像。画像加入 `TravelPlanRequest`，编排器沿用同一个请求对象传递给天气、路线、住宿、餐饮和摘要 Agent。
 
 ## 约束执行
 
