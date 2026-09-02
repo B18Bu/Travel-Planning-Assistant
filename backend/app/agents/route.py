@@ -184,7 +184,7 @@ class RouteAgent:
             day_items: list[TimedAttraction] = []
             day_missing: list[str] = []
             assigned_keys: set[tuple[str, str | None]] = set()
-            for slot_index, slot in enumerate(_SLOTS, 1):
+            for slot_index, slot in enumerate(self._slots(request), 1):
                 if slot_index > len(day_candidates):
                     day_missing.append(f"route_day_{day}_attraction_{slot_index}")
                     continue
@@ -220,6 +220,11 @@ class RouteAgent:
                 missing.append(field)
             itineraries.append(DailyItinerary(day=day, weather_reminder=daily_weather.travel_reminder if daily_weather else _MISSING_WEATHER, attractions=tuple(day_items), missing_fields=tuple(day_missing)))
         return tuple(itineraries), sources, missing
+
+    @staticmethod
+    def _slots(request: TravelPlanRequest) -> tuple[str, ...]:
+        limit = request.profile.agent_guidance.route.daily_primary_limit
+        return _SLOTS[:limit] if limit is not None else _SLOTS
 
     @staticmethod
     def _weather(value: AgentResult[WeatherPlanData] | tuple[str, ...] | list[str]) -> tuple[tuple[DailyWeather, ...], tuple[str, ...], tuple[str, ...]]:
