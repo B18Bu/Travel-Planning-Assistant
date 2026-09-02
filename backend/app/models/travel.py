@@ -271,6 +271,7 @@ class DailyFoodPlan(StrictModel):
     nearby_attraction_name: NonEmptyText | None = None
     candidates: tuple[FoodCandidate, ...] = ()
     filter_suggestions: tuple[NonEmptyText, ...] = ()
+    reference_notes: tuple[NonEmptyText, ...] = ()
 
 
 class FoodPlanData(StrictModel):

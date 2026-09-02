@@ -1,5 +1,5 @@
 from app.agents.food import FoodAgent
-from app.models.travel import AgentGuidance, FoodCandidate, PreferenceItem, PoiCandidate, TravelPreferenceProfile
+from app.models.travel import AgentGuidance, DailyFoodPlan, FoodCandidate, PreferenceItem, PoiCandidate, TravelPreferenceProfile
 
 
 def test_food_candidate_is_removed_when_model_exclusion_term_matches_any_candidate_text():
@@ -20,3 +20,15 @@ def test_food_candidate_is_removed_when_model_exclusion_term_matches_any_candida
     )
 
     assert FoodAgent._is_allowed_by_profile(candidate, profile) is False
+
+
+def test_daily_food_plan_keeps_flyai_reference_separate_from_poi_candidates():
+    plan = DailyFoodPlan(
+        day=1,
+        area="成都",
+        meal_period="午餐",
+        reference_notes=("飞猪 AI 餐饮参考：请向商家确认口味与营业时间。",),
+    )
+
+    assert plan.candidates == ()
+    assert plan.reference_notes == ("飞猪 AI 餐饮参考：请向商家确认口味与营业时间。",)

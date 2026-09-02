@@ -155,6 +155,7 @@ class SummaryAgent:
                         lines.extend(f"- {cls._safe(suggestion)}" for suggestion in daily.filter_suggestions)
                     else:
                         lines.append("- 暂无候选。")
+                    lines.extend(f"- {cls._safe(note)}" for note in daily.reference_notes)
                     lines.append("- 营业时间、菜品与服务安排请以商家官方信息为准。")
                 else:
                     names = "、".join(candidate.poi.name for candidate in daily.candidates)
