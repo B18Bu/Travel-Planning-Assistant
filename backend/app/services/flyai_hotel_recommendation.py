@@ -28,11 +28,13 @@ class HotelRecommendationResults(tuple[CombinedHotelResult, ...]):
         flyai_retrieved_at: datetime,
         amap_retrieved_at: datetime | None,
         poi_unavailable: bool = False,
+        flyai_unavailable: bool = False,
     ) -> "HotelRecommendationResults":
         instance = super().__new__(cls, results)
         instance.flyai_retrieved_at = flyai_retrieved_at
         instance.amap_retrieved_at = amap_retrieved_at
         instance.poi_unavailable = poi_unavailable
+        instance.flyai_unavailable = flyai_unavailable
         return instance
 
 
@@ -50,8 +52,11 @@ class FlyAIHotelRecommendationService:
             self._amap_client.search_poi("住宿服务", request.city_name),
             return_exceptions=True,
         )
-        if isinstance(flyai_result, BaseException):
-            raise flyai_result
+        flyai_failed = isinstance(flyai_result, BaseException)
+        flyai_items = [] if flyai_failed else flyai_result
+        if not isinstance(flyai_items, list):
+            flyai_items = []
+            flyai_failed = True
 
         amap_failed = isinstance(amap_result, BaseException)
         amap_items = [] if amap_failed else amap_result
@@ -66,7 +71,7 @@ class FlyAIHotelRecommendationService:
             amap_index.setdefault(normalize_hotel_name(item["name"]), []).append(item)
 
         merged: list[CombinedHotelResult] = []
-        for hotel in flyai_result:
+        for hotel in flyai_items:
             poi = self._take_match(hotel.name, amap_index)
             merged.append(self._from_flyai(hotel, poi))
 
@@ -88,6 +93,7 @@ class FlyAIHotelRecommendationService:
             flyai_retrieved_at=flyai_started_at,
             amap_retrieved_at=amap_retrieved_at,
             poi_unavailable=amap_failed,
+            flyai_unavailable=flyai_failed,
         )
 
     async def search(self, request: FlyAIHotelSearchRequest) -> HotelRecommendationResults:

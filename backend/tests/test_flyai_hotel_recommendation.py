@@ -167,16 +167,18 @@ async def test_amap_failure_keeps_flyai_results_without_fabricating_poi():
 
 
 @pytest.mark.asyncio
-async def test_flyai_failure_is_raised_and_not_replaced_with_fake_prices():
+async def test_flyai_failure_keeps_amap_results_without_fake_flyai_fields():
     flyai_error = FlyAIHotelError("TIMEOUT")
     service = FlyAIHotelRecommendationService(
         FakeFlyAIClient(error=flyai_error), FakeAmapClient([amap("酒店", "地址")])
     )
 
-    with pytest.raises(FlyAIHotelError) as error:
-        await service.recommend(request())
+    result = await service.recommend(request())
 
-    assert error.value.code == "TIMEOUT"
+    assert result[0].match_status == "poi_only"
+    assert result[0].hotel_name == "酒店"
+    assert result[0].amap_address == "地址"
+    assert result[0].flyai_price is None
 
 
 @pytest.mark.asyncio
