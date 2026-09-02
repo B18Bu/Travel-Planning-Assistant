@@ -5,6 +5,8 @@ import re
 from datetime import date
 from typing import Any
 
+from pydantic import ValidationError
+
 from app.models.planning import TravelQueryParseResponse
 from app.models.travel import TravelPreferenceProfile
 from app.services.deepseek import DeepSeekClient
@@ -14,6 +16,7 @@ class TravelQueryParser:
     """使用大模型将自然语言旅行需求转换为受控结构。"""
 
     _required_fields = ("origin", "destination", "departure_date", "travelers", "days")
+    _model_fields = (*_required_fields, "budget", "preferences", "ambiguous_fields")
     _number_values = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
     _field_patterns = {
         "origin_destination": re.compile(r"从(?P<origin>[\u4e00-\u9fff]{2,20})到(?P<destination>[\u4e00-\u9fff]{2,20})(?:玩|旅游|出行|，|,|。|$)"),
@@ -34,30 +37,54 @@ class TravelQueryParser:
                 json.dumps({"query": query, "fields": ["origin", "destination", "departure_date", "travelers", "days", "budget", "preferences", "preference_profile"], "preference_profile_schema": {"summary": "string|null", "companions": [{"type": "string", "count": "integer"}], "preferences": [{"category": "string", "priority": "must|prefer|avoid", "instruction": "string", "exclude_terms": ["string"], "verification_required": "boolean"}], "agent_guidance": {"route": {"instructions": ["string"], "daily_primary_limit": "integer|null", "priority_terms": ["string"]}, "food": {"instructions": ["string"], "exclude_terms": ["string"], "verification_notes": ["string"]}, "lodging": ["string"], "summary": ["string"]}, "verification_notes": ["string"]}}, ensure_ascii=False),
             )
             payload = self._json_payload(content)
-            profile = payload.pop(
-                "preference_profile",
-                {"verification_notes": ["偏好理解暂不可用，请在生成方案前核验偏好要求。"]},
-            )
-            model_result = TravelQueryParseResponse.model_validate({**payload, "profile": profile})
+            profile = self._profile(payload.pop("preference_profile", None))
+            model_values = self._model_values(payload)
         except Exception:
-            model_result = TravelQueryParseResponse(
-                profile=TravelPreferenceProfile(
-                    verification_notes=("偏好理解暂不可用，请在生成方案前核验偏好要求。",)
-                )
-            )
+            profile = self._fallback_profile()
+            model_values = {}
         values = {
-            name: rule_values[name] if rule_values[name] is not None else getattr(model_result, name)
+            name: rule_values[name] if rule_values[name] is not None else model_values.get(name)
             for name in self._required_fields
         }
-        preferences = tuple(dict.fromkeys(model_result.preferences))
+        preferences = tuple(dict.fromkeys(model_values.get("preferences", ())))
         return TravelQueryParseResponse(
             **values,
-            budget=model_result.budget,
+            budget=model_values.get("budget"),
             preferences=preferences,
-            profile=model_result.profile,
+            profile=profile,
             missing_fields=self._missing_fields(values),
-            ambiguous_fields=model_result.ambiguous_fields,
+            ambiguous_fields=model_values.get("ambiguous_fields", ()),
         )
+
+    @staticmethod
+    def _fallback_profile() -> TravelPreferenceProfile:
+        return TravelPreferenceProfile(
+            verification_notes=("偏好理解暂不可用，请在生成方案前核验偏好要求。",)
+        )
+
+    @classmethod
+    def _profile(cls, payload: object) -> TravelPreferenceProfile:
+        if payload is None:
+            return cls._fallback_profile()
+        try:
+            return TravelPreferenceProfile.model_validate(payload)
+        except (ValidationError, TypeError, ValueError):
+            return cls._fallback_profile()
+
+    @classmethod
+    def _model_values(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        """逐字段校验模型结果，忽略无关或格式错误字段。"""
+
+        values: dict[str, Any] = {}
+        for name in cls._model_fields:
+            if name not in payload:
+                continue
+            try:
+                parsed = TravelQueryParseResponse.model_validate({name: payload[name]})
+            except (ValidationError, TypeError, ValueError):
+                continue
+            values[name] = getattr(parsed, name)
+        return values
 
     def _rule_values(self, query: str) -> dict[str, object]:
         values: dict[str, object] = {name: None for name in self._required_fields}

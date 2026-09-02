@@ -32,6 +32,24 @@ class ProfileClient:
         }'''
 
 
+class ProfileWithInvalidBaseFieldClient:
+    async def chat_completion(self, system_prompt: str, user_prompt: str) -> str:
+        return '''{
+          "travelers": "2位成人加1个孩子",
+          "preferences": ["不吃辣"],
+          "verification_notes": ["不应放在顶层"],
+          "preference_profile": {
+            "summary": "适合亲子的轻松行程",
+            "companions": [{"type": "child", "count": 1}],
+            "preferences": [
+              {"category": "diet", "priority": "must", "instruction": "不吃辣", "exclude_terms": ["麻辣"], "verification_required": true}
+            ],
+            "agent_guidance": {"route": {"instructions": ["每日安排两个主要时段"], "daily_primary_limit": 2, "priority_terms": ["亲子"]}, "food": {"instructions": ["优先清淡、儿童友好餐饮"], "exclude_terms": ["麻辣"], "verification_notes": ["确认口味"]}, "lodging": [], "weather": [], "summary": []},
+            "verification_notes": ["确认餐厅口味与儿童餐"]
+          }
+        }'''
+
+
 @pytest.mark.asyncio
 async def test_parse_extracts_complete_travel_fields_without_year():
     parser = TravelQueryParser(StaticClient(), today=date(2026, 9, 2))
@@ -79,3 +97,18 @@ async def test_parse_preserves_rule_values_when_model_fails():
     assert result.days == 3
     assert result.travelers is None
     assert result.missing_fields == ("travelers",)
+
+
+@pytest.mark.asyncio
+async def test_parse_preserves_profile_when_model_base_field_is_invalid():
+    parser = TravelQueryParser(ProfileWithInvalidBaseFieldClient(), today=date(2026, 9, 2))
+
+    result = await parser.parse(
+        "2位成人带1个孩子，9月10日从北京到成都玩3天，不吃辣，行程节奏不要太赶。"
+    )
+
+    assert result.travelers == 3
+    assert result.preferences == ("不吃辣",)
+    assert result.profile.summary == "适合亲子的轻松行程"
+    assert result.profile.preferences[0].instruction == "不吃辣"
+    assert result.profile.verification_notes == ("确认餐厅口味与儿童餐",)
