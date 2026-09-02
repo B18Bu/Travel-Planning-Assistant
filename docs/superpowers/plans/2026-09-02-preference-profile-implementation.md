@@ -12,7 +12,7 @@
 
 ## 文件结构
 
-- 修改：`backend/app/models/travel.py` — 画像合同与请求字段。
+- 修改：`backend/app/models/travel.py`、`backend/app/models/planning.py` — 画像合同、规划请求与解析响应字段。
 - 修改：`backend/app/services/query_parser.py` — 规则识别和画像构造。
 - 修改：`backend/app/agents/route.py`、`food.py`、`lodging.py`、`summary.py` — 约束执行与可核验提示。
 - 修改：`backend/app/orchestration/sequential.py` — 最终合规校验与摘要入参。
@@ -21,7 +21,7 @@
 
 ### 任务 1：画像合同与确定性解析
 
-**文件：** `backend/app/models/travel.py`、`backend/app/services/query_parser.py`、`backend/tests/test_query_parser.py`
+**文件：** `backend/app/models/travel.py`、`backend/app/models/planning.py`、`backend/app/services/query_parser.py`、`backend/tests/test_query_parser.py`
 
 - [ ] 编写失败测试：
 ```python
@@ -31,7 +31,7 @@ assert result.profile.has_elderly is True
 assert result.profile.low_intensity is True
 ```
 - [ ] 运行：`cd backend; pytest tests/test_query_parser.py -q`，预期画像属性不存在而失败。
-- [ ] 最少实现：增加冻结 `TravelPreferenceProfile`；在 `TravelPlanRequest` 中声明 `profile`；在 `_rule_values` 识别“老人、儿童、清真、不吃猪肉、不吃辣、不要太赶”，并由单一 `build_preference_profile()` 映射字段。
+- [ ] 最少实现：增加冻结 `TravelPreferenceProfile`；在 `TravelPlanRequest` 和 `TravelQueryParseResponse` 中声明 `profile`；在 `_rule_values` 识别“老人、儿童、清真、不吃猪肉、不吃辣、不要太赶”，并由单一 `build_preference_profile()` 映射字段。前端以解析响应中的 `profile` 原样提交，避免画像在解析与规划接口之间丢失。
 ```python
 class TravelPreferenceProfile(StrictModel):
     has_children: bool = False
