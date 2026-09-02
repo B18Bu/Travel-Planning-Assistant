@@ -18,13 +18,15 @@ from app.models.travel import (
     TravelPlanRequest,
 )
 from app.services.resilience import ExternalServiceUnavailable
+from app.services.fliggy_flyai_client import FlyAIUpstreamError
 
 
 class FoodAgent:
     """按每日景区行程获取午餐和晚餐餐饮 POI。"""
 
-    def __init__(self, amap_client: Any) -> None:
+    def __init__(self, amap_client: Any, flyai_client: Any | None = None) -> None:
         self.amap_client = amap_client
+        self.flyai_client = flyai_client
 
     async def run(
         self,
@@ -272,8 +274,10 @@ class FoodAgent:
                     break
             except (ExternalServiceUnavailable, KeyError, TypeError, ValueError, ValidationError):
                 candidate = None
+        reference_notes = ()
         if candidate is None:
             fields.append(f"food_day_{day}_{slot_name}_candidates")
+            reference_notes = await self._flyai_reference(request, plan_name=name)
         plan_area = address if isinstance(address, str) and len(address) <= 100 else request.destination
         if plan_area != address:
             fields.append(f"food_day_{day}_{slot_name}_area")
@@ -290,8 +294,49 @@ class FoodAgent:
             filter_suggestions=()
             if candidate
             else ("附近餐饮候选需以商家官方信息核验，请勿以不安全区域文本搜索替代。",),
+            reference_notes=reference_notes,
         )
         return plan, fields
+
+    async def _flyai_reference(
+        self,
+        request: TravelPlanRequest,
+        *,
+        plan_name: object,
+    ) -> tuple[str, ...]:
+        """高德无候选时补充飞猪自由文本，且绝不伪装为 POI。"""
+
+        if self.flyai_client is None or not isinstance(plan_name, str) or not plan_name.strip():
+            return ()
+        preferences = self._food_preferences(request.profile)
+        try:
+            reference = await self.flyai_client.search_food(
+                request.destination,
+                plan_name,
+                preferences,
+            )
+        except (FlyAIUpstreamError, ExternalServiceUnavailable, KeyError, TypeError, ValueError):
+            return ()
+        if not isinstance(reference, str) or not reference.strip():
+            return ()
+        note = (
+            f"飞猪 AI 餐饮参考：{reference.strip()[:60]}"
+            "请向商家确认口味、食材、营业时间等信息。"
+        )
+        return (note[:100],)
+
+    @staticmethod
+    def _food_preferences(profile: object) -> tuple[str, ...]:
+        preferences: list[str] = []
+        for preference in getattr(profile, "preferences", ()):
+            instruction = getattr(preference, "instruction", None)
+            if isinstance(instruction, str) and instruction.strip() and instruction not in preferences:
+                preferences.append(instruction)
+        food_guidance = getattr(getattr(profile, "agent_guidance", None), "food", None)
+        for instruction in getattr(food_guidance, "instructions", ()):
+            if isinstance(instruction, str) and instruction.strip() and instruction not in preferences:
+                preferences.append(instruction)
+        return tuple(preferences[:20])
 
     @staticmethod
     def _is_allowed_by_profile(candidate: FoodCandidate, profile: object) -> bool:

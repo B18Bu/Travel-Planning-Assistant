@@ -76,6 +76,43 @@ class FlyAIClient:
             keyword=scenic_keyword,
             entry_date=entry_date.isoformat(),
         )
+        return await self._search_text(query)
+
+    async def search_food(
+        self,
+        city_name: str,
+        nearby_attraction: str | None,
+        preferences: tuple[str, ...],
+    ) -> str:
+        """查询餐饮参考文本，不承诺门店、价格、营业时间或可订状态。"""
+
+        if not isinstance(city_name, str) or not city_name.strip():
+            raise ValueError("餐饮查询城市无效")
+        if nearby_attraction is not None and (
+            not isinstance(nearby_attraction, str) or not nearby_attraction.strip()
+        ):
+            raise ValueError("餐饮查询附近地点无效")
+        if not isinstance(preferences, tuple) or any(
+            not isinstance(item, str) or not item.strip() for item in preferences
+        ):
+            raise ValueError("餐饮偏好无效")
+
+        location = (
+            f"{city_name.strip()}的{nearby_attraction.strip()}附近"
+            if nearby_attraction
+            else city_name.strip()
+        )
+        preference_text = "；".join(preferences) if preferences else "无明确偏好"
+        query = (
+            f"查询{location}的餐饮参考，偏好：{preference_text}。"
+            "仅返回适合上述偏好的餐饮类型、点餐建议与核验要点。"
+            "只读查询，不预订、不下单、不支付；不承诺具体门店、价格、营业时间或库存。"
+        )
+        return await self._search_text(query)
+
+    async def _search_text(self, query: str) -> str:
+        """执行 ai-search 并只读取其 data 文本字段。"""
+
         args = ["ai-search", "--query", query]
 
         try:

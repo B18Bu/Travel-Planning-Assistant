@@ -16,6 +16,7 @@ from app.services.fliggy_hotel import HotelSearchService
 from app.services.fliggy_hotel_client import FliggyHotelClient
 from app.services.flyai_hotel_client import FlyAIHotelClient
 from app.services.flyai_hotel_recommendation import FlyAIHotelRecommendationService
+from app.services.fliggy_flyai_client import FlyAIClient
 from app.services.resilience import CircuitBreaker
 from app.errors import FliggyHotelNotConfigured
 
@@ -138,10 +139,19 @@ def build_orchestrator(settings: Settings) -> SequentialTravelOrchestrator:
         poi_cache_ttl_seconds=settings.amap_poi_cache_ttl_seconds,
         timeout=timeout,
     )
+    flyai_client = (
+        FlyAIClient(
+            settings.flyai_api_key,
+            command=settings.flyai_cli_command,
+            timeout_seconds=settings.flyai_cli_timeout_seconds,
+        )
+        if isinstance(settings.flyai_api_key, str) and settings.flyai_api_key.strip()
+        else None
+    )
     return SequentialTravelOrchestrator(
         WeatherAgent(weather_client, amap_client),
         RouteAgent(amap_client),
         LodgingAgent(amap_client),
-        FoodAgent(amap_client),
+        FoodAgent(amap_client, flyai_client=flyai_client),
         SummaryAgent(),
     )

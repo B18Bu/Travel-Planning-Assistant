@@ -47,6 +47,31 @@ async def test_search_does_not_include_visitor_count_or_identity_fields() -> Non
 
 
 @pytest.mark.asyncio
+async def test_search_food_builds_reference_only_query_with_location_and_preferences() -> None:
+    calls = []
+
+    async def fake_run(command, args, timeout):
+        calls.append((command, args, timeout))
+        return '{"data":"宽窄巷子附近可关注清淡川菜、蒸菜与儿童餐。"}'
+
+    result = await FlyAIClient("server-secret", runner=fake_run).search_food(
+        "成都", "宽窄巷子", ("不吃辣", "儿童友好")
+    )
+
+    assert calls[0][1][0] == "ai-search"
+    query = calls[0][1][2]
+    assert "成都" in query
+    assert "宽窄巷子" in query
+    assert "餐饮" in query
+    assert "不吃辣" in query
+    assert "儿童友好" in query
+    assert "不预订" in query
+    assert "价格" in query
+    assert "库存" in query
+    assert result == "宽窄巷子附近可关注清淡川菜、蒸菜与儿童餐。"
+
+
+@pytest.mark.asyncio
 async def test_search_maps_timeout_to_controlled_error() -> None:
     async def fake_run(command, args, timeout):
         raise asyncio.TimeoutError
