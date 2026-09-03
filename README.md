@@ -2,9 +2,9 @@
 
 面向企业内部的**只读式文旅规划服务**：输入出发地、目的地、日期与人数，系统按「天气 → 路线 → 住宿 → 餐饮 → 汇总」的固定链路，汇聚天气、地图路线、住宿区域、餐饮 POI 与自建攻略知识库，生成**可追溯、可降级、不编造**的结构化行程。
 
-> 当前版本是 **MVP**：只提供建议与核验提示，**不执行预订、支付或任何交易**。
+> 当前版本持续迭代中：只提供建议与核验提示，**不执行预订、支付或任何交易**。
 
-![语言](https://img.shields.io/badge/语言-简体中文-blue) ![后端](https://img.shields.io/badge/后端-FastAPI%20%2F%20Python%203.12-brightgreen) ![前端](https://img.shields.io/badge/前端-原生%20HTML%2FJS-orange) ![状态](https://img.shields.io/badge/状态-MVP-yellow)
+![语言](https://img.shields.io/badge/语言-简体中文-blue) ![后端](https://img.shields.io/badge/后端-FastAPI%20%2F%20Python%203.12-brightgreen) ![前端](https://img.shields.io/badge/前端-原生%20HTML%2FJS-orange) ![状态](https://img.shields.io/badge/状态-持续迭代-blue)
 
 ---
 
@@ -323,7 +323,7 @@ AMAP_SECURITY_KEY=填写高德控制台生成的个人安全密钥（SK）
 
 ## 容错设计
 
-当前 MVP 为进程内行为，不是分布式治理：
+当前版本采用进程内治理，而非分布式治理：
 
 1. **缓存**：天气、地理编码、驾车路线、POI 分别使用对应 TTL 的内存缓存；命中缓存返回 `data_status=cached` 并刷新 `retrieved_at`。
 2. **重试**：仅对连接错误、超时、HTTP `429` 和 `5xx` 做最多 3 次指数退避重试；业务参数错误与其他响应不盲目重试。
