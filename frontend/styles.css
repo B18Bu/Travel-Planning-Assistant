@@ -48,11 +48,15 @@
   .proto-badge { font-size: 12px; letter-spacing: 2px; color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border); padding: 4px 14px; border-radius: 999px; }
 
   /* ============ 布局骨架 ============ */
-  .shell { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+  .shell { flex: 1; display: flex; min-height: 0; overflow: hidden; position: relative; }
   .sidebar {
     width: 252px; flex-shrink: 0; background: var(--surface-2); border-right: 1px solid var(--border);
-    padding: 18px 16px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto;
+    padding: 18px 16px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; transition: width .24s ease, padding .24s ease, border-color .24s ease;
   }
+  .sidebar-toggle { position: absolute; z-index: 30; top: 16px; left: 240px; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--accent); box-shadow: var(--shadow); cursor: pointer; font-size: 22px; line-height: 20px; transition: left .24s ease, background .18s ease, color .18s ease; }
+  .sidebar-toggle:hover, .sidebar-toggle:focus-visible { background: var(--accent); color: #fff; outline: none; }
+  .shell.sidebar-collapsed .sidebar { width: 0; padding-left: 0; padding-right: 0; border-right-color: transparent; overflow: hidden; }
+  .shell.sidebar-collapsed .sidebar-toggle { left: 12px; }
   .side-label { font-size: 12px; font-weight: 600; letter-spacing: 2px; color: var(--text-dim); }
   .side-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
   .side-section-head .side-label { margin-bottom: 0; }
@@ -632,10 +636,10 @@
 
   /* ============ 响应式 ============ */
   @media (max-width: 1024px) {
-    .shell { flex-direction: column; }
-    .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 14px; border-right: none; border-bottom: 1px solid var(--border); }
-    .side-section, .side-foot { flex: 1; min-width: 200px; }
-    .side-foot { margin-top: 0; }
+    .shell { flex-direction: row; }
+    .sidebar { position: absolute; inset: 0 auto 0 0; z-index: 20; width: 252px; border-bottom: none; box-shadow: 12px 0 24px rgba(58, 70, 120, .12); }
+    .shell.sidebar-collapsed .sidebar { width: 0; }
+    .sidebar-toggle { left: 264px; }
     .dash-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 640px) {

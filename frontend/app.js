@@ -3,6 +3,7 @@
   const intro = document.getElementById("intro");
   const topbar = document.querySelector(".topbar");
   const shell = document.querySelector(".shell");
+  const sidebarToggle = document.getElementById("sidebar-toggle");
   const main = document.querySelector(".main");
   const form = document.getElementById("travel-form");
   const originInput = document.getElementById("home-origin");
@@ -66,6 +67,14 @@
   let fliggyStatus = { available: false, message: "飞猪门票查询服务尚未配置" };
   let pendingFliggySubmit = false;
   const FLIGGY_CONSENT_KEY = "fliggy-ticket-query-consent";
+  const narrowSidebarQuery = window.matchMedia("(max-width: 1024px)");
+
+  function setSidebarCollapsed(collapsed) {
+    shell.classList.toggle("sidebar-collapsed", collapsed);
+    sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+    sidebarToggle.setAttribute("aria-label", collapsed ? "展开左侧导航" : "收起左侧导航");
+    sidebarToggle.firstElementChild.textContent = collapsed ? "›" : "‹";
+  }
 
   function showModal(mask) {
     modalStackLevel += 1;
@@ -113,6 +122,12 @@
   const startExperienceButton = document.getElementById("start-experience");
   const backToIntroButton = document.getElementById("back-to-intro");
   const newPlanButton = document.getElementById("new-plan");
+
+  sidebarToggle.addEventListener("click", () => setSidebarCollapsed(!shell.classList.contains("sidebar-collapsed")));
+  narrowSidebarQuery.addEventListener("change", (event) => {
+    if (event.matches) setSidebarCollapsed(true);
+  });
+  setSidebarCollapsed(narrowSidebarQuery.matches);
 
   function startNewPlan() {
     resetPlanForm();

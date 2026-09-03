@@ -48,7 +48,10 @@
 
   <div id="workspace" class="shell" aria-hidden="true" inert>
     <!-- 左侧导航 -->
-    <aside class="sidebar">
+    <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="true" aria-label="收起左侧导航">
+      <span aria-hidden="true">‹</span>
+    </button>
+    <aside class="sidebar" id="sidebar">
       <button id="new-plan" class="new-task-btn" type="button">＋ 新建任务</button>
 
       <div class="side-section history-panel" id="history-panel">

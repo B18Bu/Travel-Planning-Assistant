@@ -462,7 +462,7 @@ def test_frontend_shows_travel_plan_result_in_independent_modal():
         "travelMask",
         "travelTitle",
         "travelContent",
-        "travelMask.classList.add(\"show\")",
+        "showModal(travelMask)",
         "closeTravelModal",
         "proc-steps",
     ):
@@ -553,6 +553,19 @@ def test_workbench_scales_down_to_fit_viewport():
     # 当前工作台使用固定视口和功能页响应式布局，不再依赖旧首页缩放逻辑。
     assert ".shell" in styles
     assert "@media (max-width: 768px)" in styles
+
+
+def test_frontend_sidebar_can_collapse_for_narrow_windows():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="sidebar-toggle"' in html
+    assert 'aria-controls="sidebar"' in html
+    assert 'shell.classList.toggle("sidebar-collapsed", collapsed)' in script
+    assert 'sidebarToggle.setAttribute("aria-expanded", String(!collapsed))' in script
+    assert ".shell.sidebar-collapsed .sidebar" in styles
+    assert "@media (max-width: 1024px)" in styles
 
 
 @pytest.mark.asyncio
