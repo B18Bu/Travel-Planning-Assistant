@@ -93,8 +93,8 @@
       │  1 天气 → 2 路线 → 3 住宿 → 4 餐饮 → 5 汇总
       ├──────────────┬───────────────┬───────────────┐
       ▼              ▼               ▼               ▼
-[和风天气客户端]  [高德地图客户端]  [文档知识库]   [飞猪 / FlyAI]
- /v7/weather/15d  地理编码/驾车/POI  PDF/DOCX→向量→检索  门票 / 酒店 / 酒店推荐
+[高德地图客户端]  [文档知识库]   [飞猪 / FlyAI]
+ 地理编码/天气/驾车/POI  PDF/DOCX→向量→检索  门票 / 酒店 / 酒店推荐
       │              │               │
       └────── 受控重试、缓存、熔断、降级 ──────┘
                        │
@@ -105,13 +105,13 @@
 
 - **前端**：原生 HTML/JavaScript 工作台，由后端同源托管，只调用相对路径 API。
 - **后端**：FastAPI + Pydantic 强类型数据合同，按固定顺序编排专业 Agent。
-- **外部数据**：和风天气、高德地图、飞猪 FlyAI / TOP、DeepSeek、Qwen-VL、本地 BGE + Chroma。
+- **外部数据**：高德地图、飞猪 FlyAI / TOP、DeepSeek、Qwen-VL、本地 BGE + Chroma。
 
 外部数据源端点（固定 HTTPS 域名，只读 GET）：
 
 | 数据源 | 端点 | 用途与关键参数 |
 | --- | --- | --- |
-| 和风天气 | `GET /v7/weather/15d` | 逐日预报，参数 `location`、`key` |
+| 高德地图 | `GET /v3/weather/weatherInfo` | 逐日天气（最多 4 天），参数 `city`、`extensions=all`、`key` |
 | 高德地图 | `GET /v3/geocode/geo` | 地理编码（地名 → 经纬度），参数 `address`、`key` |
 | 高德地图 | `GET /v3/direction/driving` | 驾车路线，参数 `origin`、`destination`、`key` |
 | 高德地图 | `GET /v5/place/text` | 文本 POI 搜索，参数 `keywords`、`region`、`city_limit=true`、`key` |
@@ -129,7 +129,7 @@
 
 | Agent | 职责 | 数据来源 |
 | --- | --- | --- |
-| 天气 Agent | 逐日预报、风险等级（暴雨/台风/高温）、活动约束 | 高德地理编码 + 和风天气 |
+| 天气 Agent | 逐日预报、风险等级（暴雨/台风/高温）、活动约束 | 高德地理编码 + 高德天气 |
 | 路线 Agent | 每日上午/下午/傍晚景点安排（各约 120 分钟）、景区间驾车预估；高风险天气优先室内文化场所 | 高德地理编码、驾车路线、POI |
 | 住宿 Agent | 推荐住宿区域与候选（只给位置和筛选建议，不含价格） | 高德住宿 POI |
 | 餐饮 Agent | 按上午景区推荐午餐、按傍晚（回退下午）景区推荐晚餐，从 POI 标签提取推荐菜品 | 高德周边餐饮 POI |
@@ -222,7 +222,6 @@ python -m uvicorn app.main:app --app-dir backend --reload
 | --- | --- | --- | --- |
 | `APP_ENV` | 运行环境名称 | — | `development` |
 | `ALLOWED_ORIGINS` | CORS 允许的浏览器来源列表 | URL 列表 | `["http://localhost:5173"]` |
-| `HEWEATHER_API_KEY` | 和风天气服务端密钥 | — | 空 |
 | `AMAP_API_KEY` | 高德地图服务端密钥 | — | 空 |
 | `MINERU_API_KEY` | MinerU PDF 解析服务端密钥（预留） | — | 空 |
 | `QWEN_VL_API_KEY` | Qwen-VL 图表 OCR 服务端密钥 | — | 空 |
@@ -255,12 +254,22 @@ python -m uvicorn app.main:app --app-dir backend --reload
 | `EXTERNAL_MAX_ATTEMPTS` | 外部请求最大尝试次数 | 次 | `3` |
 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | 连续失败后打开熔断 | 次 | `3` |
 | `CIRCUIT_BREAKER_OPEN_SECONDS` | 熔断保持打开时间 | 秒 | `60` |
-| `WEATHER_CACHE_TTL_SECONDS` | 和风天气逐日预报缓存 TTL | 秒 | `1800` |
 | `AMAP_GEOCODE_CACHE_TTL_SECONDS` | 高德地理编码缓存 TTL | 秒 | `604800` |
 | `AMAP_ROUTE_CACHE_TTL_SECONDS` | 高德驾车路线缓存 TTL | 秒 | `900` |
 | `AMAP_POI_CACHE_TTL_SECONDS` | 高德 POI 搜索缓存 TTL | 秒 | `3600` |
 
 外部服务地址由后端固定配置，客户端不可覆盖；密钥缺失时服务会提示配置不完整。
+
+### 高德地图数字签名
+
+如果高德控制台开启了 Web 服务数字签名，需要同时配置 API Key 和个人安全密钥（SK）：
+
+```dotenv
+AMAP_API_KEY=填写高德 Web 服务 Key
+AMAP_SECURITY_KEY=填写高德控制台生成的个人安全密钥（SK）
+```
+
+程序会为地理编码、天气、路线和 POI 请求统一生成 `sig`。请勿将真实 Key 或 SK 写入 README、测试代码或提交到 GitHub。若未开启数字签名，将 `AMAP_SECURITY_KEY` 留空即可。
 
 ---
 
@@ -424,7 +433,7 @@ docs/
 | --- | --- |
 | 页面打不开或根路径 `404` | 确认从仓库根目录启动，`frontend/index.html` 存在；不要把 `--app-dir` 指向 `frontend` |
 | 启动报 `ModuleNotFoundError: app` | 设置 `$env:PYTHONPATH = "$PWD\backend"`，或按示例使用 `--app-dir backend` |
-| 服务提示配置不完整 | 检查 `backend/.env` 是否包含非空 `HEWEATHER_API_KEY` 与 `AMAP_API_KEY` |
+| 服务提示配置不完整 | 检查 `backend/.env` 是否包含非空 `AMAP_API_KEY` |
 | 规划返回 `degraded` | 查看页面「待核验事项」和「降级说明」；确认上游网络、密钥、配额与熔断状态 |
 | 规划返回 `422` | 对照请求合同检查地点、日期、人数、天数、预算与偏好；未知字段会被拒绝 |
 | 规划返回 `500` | 查看服务端受控日志中的请求标识，检查编排器与配置；客户端不会收到原始堆栈 |
@@ -454,7 +463,7 @@ docs/
 - 缓存与熔断为**进程内**行为，重启即清空，不支持多实例共享；
 - 多日行程的外部调用按顺序执行，暂无统一的请求级超时预算；
 - 附近 POI 仅检查坐标字符串非空，未做本地经纬度格式校验；
-- 和风天气 15 日窗口之外的日期可能没有匹配的逐日预报；
+- 高德天气接口最多提供约 4 天预报，第 5 天及以后需出行前再次核验；
 - PDF 扫描件（图片型）依赖 OCR 能力，复杂版面不能保证完整还原；
 - 认证、限流、租户隔离、集中式密钥管理、审计与监控等生产化治理尚未实现。
 
