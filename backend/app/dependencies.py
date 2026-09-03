@@ -11,13 +11,13 @@ from app.config import Settings
 from app.orchestration.sequential import SequentialTravelOrchestrator
 from app.services.amap import AmapClient
 from app.services.cache import MemoryCache
-from app.services.heweather import HeWeatherClient
 from app.services.fliggy_hotel import HotelSearchService
 from app.services.fliggy_hotel_client import FliggyHotelClient
 from app.services.flyai_hotel_client import FlyAIHotelClient
 from app.services.flyai_hotel_recommendation import FlyAIHotelRecommendationService
 from app.services.fliggy_flyai_client import FlyAIClient
 from app.services.resilience import CircuitBreaker
+from app.services.travel_knowledge import TravelKnowledgeService
 from app.errors import FliggyHotelNotConfigured
 
 
@@ -79,6 +79,7 @@ def build_flyai_hotel_recommendation_service(settings: Settings):
         ),
         AmapClient(
             settings.amap_api_key,
+            security_key=settings.amap_security_key,
             base_url=settings.amap_base_url,
             cache=MemoryCache(),
             breaker=CircuitBreaker(
@@ -100,7 +101,7 @@ def build_flyai_hotel_recommendation_service(settings: Settings):
     )
 
 
-def build_orchestrator(settings: Settings) -> SequentialTravelOrchestrator:
+def build_orchestrator(settings: Settings, *, document_store=None, chroma_store=None) -> SequentialTravelOrchestrator:
     """按服务端配置组装完整旅行规划编排。"""
 
     timeout = httpx.Timeout(
@@ -111,25 +112,13 @@ def build_orchestrator(settings: Settings) -> SequentialTravelOrchestrator:
         pool=settings.external_total_timeout_seconds,
     )
     cache = MemoryCache()
-    weather_breaker = CircuitBreaker(
-        settings.circuit_breaker_failure_threshold,
-        settings.circuit_breaker_open_seconds,
-    )
     amap_breaker = CircuitBreaker(
         settings.circuit_breaker_failure_threshold,
         settings.circuit_breaker_open_seconds,
     )
-    weather_client = HeWeatherClient(
-        settings.heweather_api_key,
-        base_url=settings.heweather_base_url,
-        cache=cache,
-        breaker=weather_breaker,
-        max_attempts=settings.external_max_attempts,
-        cache_ttl_seconds=settings.weather_cache_ttl_seconds,
-        timeout=timeout,
-    )
     amap_client = AmapClient(
-        settings.amap_api_key,
+            settings.amap_api_key,
+            security_key=settings.amap_security_key,
         base_url=settings.amap_base_url,
         cache=cache,
         breaker=amap_breaker,
@@ -149,9 +138,10 @@ def build_orchestrator(settings: Settings) -> SequentialTravelOrchestrator:
         else None
     )
     return SequentialTravelOrchestrator(
-        WeatherAgent(weather_client, amap_client),
+        WeatherAgent(amap_client, amap_client),
         RouteAgent(amap_client),
         LodgingAgent(amap_client),
         FoodAgent(amap_client, flyai_client=flyai_client),
         SummaryAgent(),
+        TravelKnowledgeService(document_store, chroma_store) if document_store is not None and chroma_store is not None else None,
     )

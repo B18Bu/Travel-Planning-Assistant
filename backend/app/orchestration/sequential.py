@@ -8,14 +8,16 @@ from app.models.travel import AgentResult, DailyArea, DailyItinerary, ErrorDetai
 class SequentialTravelOrchestrator:
     """按天气、路线、住宿、餐饮顺序执行旅行规划。"""
 
-    def __init__(self, weather: Any, route: Any, lodging: Any, food: Any, summary: Any) -> None:
+    def __init__(self, weather: Any, route: Any, lodging: Any, food: Any, summary: Any, knowledge: Any | None = None) -> None:
         self.weather = weather
         self.route = route
         self.lodging = lodging
         self.food = food
         self.summary = summary
+        self.knowledge = knowledge
 
     async def run(self, request: Any, request_id: str, trace_id: str) -> Any:
+        knowledge_sources = await self._knowledge_sources(request.destination)
         weather = await self._safe_agent_call(
             "weather", lambda: self.weather.run(request, request_id, trace_id), request_id, trace_id
         )
@@ -25,6 +27,8 @@ class SequentialTravelOrchestrator:
             request_id,
             trace_id,
         )
+        if knowledge_sources and getattr(route, "data", None) is not None:
+            route = route.model_copy(update={"sources": (*route.sources, *knowledge_sources)})
         route_data_for_downstream = getattr(route, "data", None)
         if route_data_for_downstream is None:
             route_data_for_downstream = RoutePlanData(
@@ -59,7 +63,17 @@ class SequentialTravelOrchestrator:
             request_id,
             trace_id,
         )
+        if knowledge_sources and getattr(food, "data", None) is not None:
+            food = food.model_copy(update={"sources": (*food.sources, *knowledge_sources)})
         return self.summary.run(weather, route, lodging, food, request_id, trace_id, request.profile)
+
+    async def _knowledge_sources(self, destination: str) -> tuple:
+        if self.knowledge is None:
+            return ()
+        try:
+            return self.knowledge.retrieve(destination)
+        except Exception:
+            return ()
 
     @staticmethod
     async def _safe_agent_call(

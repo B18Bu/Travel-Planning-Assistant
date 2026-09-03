@@ -80,9 +80,6 @@ def create_app(
     settings = settings if settings is not None else get_settings()
     app = FastAPI(title="智能文旅策划助手", version="1.0.0")
     app.state.settings = settings
-    app.state.orchestrator = (
-        orchestrator if orchestrator is not None else build_orchestrator(settings)
-    )
     app.state.document_store = document_store if document_store is not None else DocumentStore(settings.document_data_dir)
     app.state.chroma_store = chroma_store
     if app.state.chroma_store is None:
@@ -94,6 +91,11 @@ def create_app(
             )
         except RuntimeError:
             app.state.chroma_store = None
+    app.state.orchestrator = (
+        orchestrator if orchestrator is not None else build_orchestrator(
+            settings, document_store=app.state.document_store, chroma_store=app.state.chroma_store
+        )
+    )
     app.state.document_processor = document_processor
     if app.state.document_processor is None and app.state.chroma_store is not None:
         app.state.document_processor = DocumentProcessor(
@@ -143,7 +145,7 @@ def create_app(
 
     @app.get("/api/ready")
     async def ready() -> dict[str, str]:
-        if not settings.heweather_api_key or not settings.amap_api_key:
+        if not settings.amap_api_key:
             raise HTTPException(status_code=503, detail="外部数据服务尚未配置")
         return {"status": "ready"}
 

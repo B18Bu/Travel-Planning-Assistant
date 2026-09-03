@@ -1,4 +1,4 @@
-from datetime import timezone
+from datetime import date, timezone
 
 import httpx
 import pytest
@@ -44,6 +44,24 @@ async def test_maps_fixed_endpoints_and_allowed_fields():
     assert location["source_updated_at"] is None and route_result["source_updated_at"] is None
     assert location["retrieved_at"].tzinfo == timezone.utc
     assert route_result["duration_minutes"] == 10 and pois[0]["category"] == "住宿服务"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_weather_forecast_uses_amap_and_returns_four_days():
+    weather = respx.get(f"{BASE}/v3/weather/weatherInfo").mock(return_value=httpx.Response(200, json={
+        "status": "1", "updateTime": "2026-09-01T10:00:00+08:00",
+        "forecasts": [{"casts": [
+            {"date": f"2026-09-0{i}", "dayweather": "晴", "nighttemp": "25", "daytemp": str(30 + i)}
+            for i in range(1, 5)
+        ]}],
+    }))
+    result = await client().daily_forecast("460200", date(2026, 9, 1), 4)
+    assert weather.call_count == 1
+    assert weather.calls[0].request.url.params["city"] == "460200"
+    assert weather.calls[0].request.url.params["extensions"] == "all"
+    assert len(result["daily"]) == 4
+    assert result["daily"][0]["condition"] == "晴"
 
 
 @respx.mock

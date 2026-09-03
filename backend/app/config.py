@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     heweather_base_url: str = "https://pb5ctx5qqr.re.qweatherapi.com"
     # 高德地理编码、驾车路线和 POI 文本搜索 API 的服务端密钥，默认空值；仅在后端使用，不得暴露。
     amap_api_key: str = ""
+    amap_security_key: str = ""
     # 高德地图固定 HTTPS API 域名，默认值：https://restapi.amap.com；仅由后端控制，不接受客户端覆盖。
     amap_base_url: str = "https://restapi.amap.com"
 

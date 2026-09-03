@@ -23,7 +23,7 @@ _RISK_WORDS = ("暴雨", "台风", "强对流", "高温")
 
 
 class WeatherAgent:
-    """使用高德地点与和风逐日预报生成天气结果。"""
+    """使用高德地点与逐日预报生成天气结果。"""
 
     def __init__(self, weather_client: Any, amap_client: Any) -> None:
         self.weather_client = weather_client
@@ -47,7 +47,7 @@ class WeatherAgent:
             if not isinstance(raw_daily, (list, tuple)):
                 raise ValueError("天气逐日预报结构无效")
             daily = tuple(self._daily_item(item) for item in raw_daily)
-            sources.append(self._source(forecast, "和风天气", SourceType.weather_api))
+            sources.append(self._source(forecast, "高德地图", SourceType.weather_api))
             data = WeatherPlanData(
                 destination=request.destination,
                 daily=daily,

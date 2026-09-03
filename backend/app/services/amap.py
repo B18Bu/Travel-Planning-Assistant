@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
+from hashlib import md5
+from urllib.parse import urlencode
 from typing import Any
 
 import httpx
@@ -13,11 +15,11 @@ from app.services.resilience import CircuitBreaker, ExternalServiceUnavailable, 
 
 
 class AmapClient:
-    """高德地理编码、驾车路线和文本 POI 的受控只读客户端。"""
+    """高德地理编码、天气、驾车路线和文本 POI 的受控只读客户端。"""
 
     _base_url = "https://restapi.amap.com"
 
-    def __init__(self, api_key: str, base_url: str = _base_url, cache: MemoryCache | None = None, breaker: CircuitBreaker | None = None, max_attempts: int = 3, geocode_cache_ttl_seconds: int = 604800, route_cache_ttl_seconds: int = 900, poi_cache_ttl_seconds: int = 3600, timeout: httpx.Timeout | float = 10.0) -> None:
+    def __init__(self, api_key: str, base_url: str = _base_url, cache: MemoryCache | None = None, breaker: CircuitBreaker | None = None, max_attempts: int = 3, geocode_cache_ttl_seconds: int = 604800, route_cache_ttl_seconds: int = 900, poi_cache_ttl_seconds: int = 3600, timeout: httpx.Timeout | float = 10.0, security_key: str = "") -> None:
         if base_url != self._base_url:
             raise ExternalServiceUnavailable("高德地图服务地址不受支持")
         if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 3:
@@ -26,6 +28,7 @@ class AmapClient:
             if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl <= 0:
                 raise ValueError("缓存 TTL 必须为正整数")
         self.api_key = api_key
+        self.security_key = security_key.strip() if isinstance(security_key, str) else ""
         self.cache = cache or MemoryCache()
         self.breaker = breaker or CircuitBreaker(3, 60)
         self.max_attempts = max_attempts
@@ -63,6 +66,17 @@ class AmapClient:
                 raise ExternalServiceUnavailable("高德地图未返回有效 POI")
         return [{**deepcopy(item), **self._metadata(result)} for item in pois]
 
+    async def daily_forecast(self, city: str, start: date, days: int) -> dict[str, Any]:
+        """查询高德逐日天气；接口最多支持未来四天。"""
+        self._require_text(city, "高德天气请求城市无效")
+        if not isinstance(start, date) or isinstance(start, datetime) or not isinstance(days, int) or isinstance(days, bool) or not 1 <= days <= 4:
+            raise ExternalServiceUnavailable("高德天气仅支持查询 1 至 4 天")
+        result = await self._get("weather", [city, start.isoformat(), str(days)], "/v3/weather/weatherInfo", {"city": city, "extensions": "all"}, self.poi_cache_ttl_seconds)
+        data = deepcopy(result["data"])
+        end = (start + timedelta(days=days)).isoformat()
+        data["daily"] = [item for item in data.get("daily", ()) if start.isoformat() <= item.get("date", "") < end]
+        return {**data, **self._metadata(result)}
+
     async def search_nearby_poi(self, keywords: str, location: str, radius_meters: int) -> list[dict[str, Any]]:
         self._require_text(keywords, "高德地图请求关键词无效")
         self._require_text(location, "高德地图请求位置无效")
@@ -93,7 +107,10 @@ class AmapClient:
         token = self.breaker.ensure_available()
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await request_with_retry(lambda: client.get(f"{self._base_url}{path}", params={**params, "key": self.api_key}), max_attempts=self.max_attempts)
+                request_params = {**params, "key": self.api_key}
+                if self.security_key:
+                    request_params["sig"] = md5((urlencode(sorted(request_params.items())) + self.security_key).encode("utf-8")).hexdigest()
+                response = await request_with_retry(lambda: client.get(f"{self._base_url}{path}", params=request_params), max_attempts=self.max_attempts)
                 if not 200 <= response.status_code < 300:
                     raise ExternalServiceUnavailable("高德地图未返回有效数据")
                 payload = response.json()
@@ -134,6 +151,19 @@ class AmapClient:
             if not _strict_int_string(path_item.get("distance")) or not _strict_int_string(path_item.get("duration")) or int(path_item["distance"]) < 0 or int(path_item["duration"]) < 0:
                 raise ExternalServiceUnavailable("高德地图未返回有效路线")
             return {"distance_meters": int(path_item["distance"]), "duration_minutes": round(int(path_item["duration"]) / 60)}
+        if path == "/v3/weather/weatherInfo":
+            forecasts = payload.get("forecasts")
+            if not isinstance(forecasts, list) or not forecasts or not isinstance(forecasts[0], dict):
+                raise ExternalServiceUnavailable("高德未返回有效天气预报")
+            casts = forecasts[0].get("casts")
+            if not isinstance(casts, list):
+                raise ExternalServiceUnavailable("高德未返回有效天气预报")
+            daily = []
+            for item in casts[:4]:
+                if not isinstance(item, dict) or not _non_empty_text(item.get("date")) or not _non_empty_text(item.get("dayweather")):
+                    raise ExternalServiceUnavailable("高德未返回有效天气预报")
+                daily.append({"date": item["date"], "condition": item["dayweather"], "temp_min": _int_or_none(item.get("nighttemp")), "temp_max": _int_or_none(item.get("daytemp"))})
+            return {"daily": daily}
         if path not in {"/v5/place/text", "/v5/place/around"}:
             raise ExternalServiceUnavailable("高德地图未返回有效数据")
         pois = payload.get("pois", [])
@@ -204,6 +234,13 @@ def _strict_int_string(value: object) -> bool:
 
 def _non_negative_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _int_or_none(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _source_updated_at(payload: dict[str, Any]) -> datetime | None:
