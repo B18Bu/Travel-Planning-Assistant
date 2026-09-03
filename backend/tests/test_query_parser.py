@@ -74,6 +74,11 @@ class ModelAuthoritativeClient:
         return '{"origin":"广州","destination":"三亚","departure_date":"2026-09-10","travelers":3,"days":3,"preferences":[]}'
 
 
+class MissingOriginClient:
+    async def chat_completion(self, system_prompt: str, user_prompt: str) -> str:
+        return '{"destination":"成都","departure_date":"2026-09-10","travelers":3,"days":3,"preferences":[]}'
+
+
 @pytest.mark.asyncio
 async def test_parse_extracts_complete_travel_fields_without_year():
     parser = TravelQueryParser(CompleteFieldsClient(), today=date(2026, 9, 2))
@@ -110,6 +115,17 @@ async def test_parse_treats_model_fields_as_authoritative():
     result = await parser.parse("两个成人带一个孩子，9月10日从北京到三亚玩3天")
 
     assert result.origin == "广州"
+
+
+@pytest.mark.asyncio
+async def test_parse_fills_missing_model_origin_from_explicit_route_phrase():
+    parser = TravelQueryParser(MissingOriginClient(), today=date(2026, 9, 2))
+
+    result = await parser.parse("2位成人带1个孩子，9月10日从天津到成都玩3天，不吃辣，多安排亲子项目环节")
+
+    assert result.origin == "天津"
+    assert result.destination == "成都"
+    assert result.missing_fields == ()
 
 
 @pytest.mark.asyncio

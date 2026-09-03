@@ -27,12 +27,21 @@ class TravelQueryParser:
     )
     _required_fields = ("origin", "destination", "departure_date", "travelers", "days")
     _model_fields = (*_required_fields, "budget", "preferences", "ambiguous_fields")
+    _explicit_route_pattern = re.compile(
+        r"从\s*(?P<origin>[\u4e00-\u9fff]{2,4})\s*(?:到|至|去往)\s*(?P<destination>[\u4e00-\u9fff]{2,4})(?=(?:玩|游|旅|[,，。；;]|$))"
+    )
+    _traveler_pattern = re.compile(
+        r"(?P<count>\d{1,2}|[一二两俩三四五六七八九十]{1,3})\s*(?:位|个|名)?\s*(?:成人|大人|小孩|孩子|儿童|小朋友|老人|老年人|长者)"
+    )
+    _chinese_numbers = {"一": 1, "二": 2, "两": 2, "俩": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
 
     def __init__(self, client: DeepSeekClient, *, today: date | None = None) -> None:
         self.client = client
         self.today = today or date.today()
 
     async def parse(self, query: str) -> TravelQueryParseResponse:
+        model_succeeded = False
+        model_provided_fields: frozenset[str] = frozenset()
         try:
             content = await self.client.chat_completion(
                 self._system_prompt,
@@ -40,7 +49,9 @@ class TravelQueryParser:
             )
             payload = self._json_payload(content)
             profile = self._profile(payload.pop("preference_profile", None))
+            model_provided_fields = frozenset(payload)
             model_values = self._model_values(payload)
+            model_succeeded = True
         except Exception as error:
             logger.warning("旅行需求大模型解析失败，返回缺失字段: %s", error)
             profile = self._fallback_profile()
@@ -49,6 +60,17 @@ class TravelQueryParser:
             name: model_values.get(name)
             for name in self._required_fields
         }
+        if model_succeeded:
+            origin, destination = self._explicit_route_locations(query)
+            if "origin" not in model_provided_fields and values["origin"] is None:
+                values["origin"] = origin
+            if "destination" not in model_provided_fields and values["destination"] is None:
+                values["destination"] = destination
+            departure_date = self._current_year_date(query)
+            if "departure_date" not in model_provided_fields and departure_date is not None:
+                values["departure_date"] = departure_date
+            if "travelers" not in model_provided_fields and values["travelers"] is None:
+                values["travelers"] = self._traveler_count(query)
         preferences = tuple(dict.fromkeys(model_values.get("preferences", ())))
         return TravelQueryParseResponse(
             **values,
@@ -92,6 +114,44 @@ class TravelQueryParser:
     @staticmethod
     def _missing_fields(values: dict[str, object]) -> tuple[str, ...]:
         return tuple(name for name in TravelQueryParser._required_fields if values.get(name) is None)
+
+    @classmethod
+    def _explicit_route_locations(cls, query: str) -> tuple[str | None, str | None]:
+        match = cls._explicit_route_pattern.search(query)
+        if match is None:
+            return None, None
+        return match.group("origin"), match.group("destination")
+
+    def _current_year_date(self, query: str) -> date | None:
+        match = re.search(r"(?<!\d{4}年)(?P<month>\d{1,2})月(?P<day>\d{1,2})日", query)
+        if match is None:
+            return None
+        try:
+            return date(self.today.year, int(match.group("month")), int(match.group("day")))
+        except ValueError:
+            return None
+
+    @classmethod
+    def _traveler_count(cls, query: str) -> int | None:
+        counts = [cls._number_value(match.group("count")) for match in cls._traveler_pattern.finditer(query)]
+        if not counts or any(count is None for count in counts):
+            return None
+        total = sum(counts)
+        return total if 1 <= total <= 20 else None
+
+    @classmethod
+    def _number_value(cls, value: str) -> int | None:
+        if value.isdigit():
+            return int(value)
+        if value in cls._chinese_numbers:
+            return cls._chinese_numbers[value]
+        if len(value) == 2 and value[0] == "十" and value[1] in cls._chinese_numbers:
+            return 10 + cls._chinese_numbers[value[1]]
+        if len(value) == 2 and value[1] == "十" and value[0] in cls._chinese_numbers:
+            return cls._chinese_numbers[value[0]] * 10
+        if len(value) == 3 and value[1] == "十" and value[0] in cls._chinese_numbers and value[2] in cls._chinese_numbers:
+            return cls._chinese_numbers[value[0]] * 10 + cls._chinese_numbers[value[2]]
+        return None
 
     @staticmethod
     def _json_payload(content: str) -> dict[str, Any]:

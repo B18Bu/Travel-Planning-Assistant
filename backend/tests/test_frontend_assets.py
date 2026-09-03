@@ -64,7 +64,7 @@ def test_frontend_uses_ticket_query_view():
     html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
 
-    assert "门票查询" in html
+    assert "景点查询" in html
     assert 'id="view-ticket"' in html
     assert 'id="ticket-form"' in html
     assert 'class="ticket-query-card"' in html
@@ -671,9 +671,25 @@ def test_frontend_saved_plans_require_selection_before_revision_and_offer_deleti
     assert 'showView("task")' not in revision_block
 
 
+def test_frontend_saved_plans_offer_read_only_preview_before_deletion():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="plan-preview-mask"' in html
+    assert 'id="plan-preview-content"' in html
+    assert "async function previewSavedPlan(plan)" in script
+    assert 'fetch(`/api/travel-plans/saved/${encodeURIComponent(plan.plan_id)}`)' in script
+    assert "safeMarkdown(record.document.markdown)" in script
+    assert "window.closeSavedPlanPreview = closeSavedPlanPreview;" in script
+    list_block = script[script.index("async function loadSavedPlans"):script.index("function selectSavedPlan")]
+    assert list_block.index('preview.textContent = "查看"') < list_block.index('remove.textContent = "删除"')
+
+
 def test_saved_plan_management_uses_flat_rows_instead_of_white_cards():
     styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
 
     assert ".plan-management-page .saved-plan-item { background: transparent; border: 0;" in styles
     assert ".plan-management-page .plan-revision-panel { background: transparent; border: 0;" in styles
     assert "border-left: 3px solid var(--accent);" in styles
+    assert ".saved-plan-preview { align-self: center; min-height: 44px; border: 0;" in styles
+    assert "color: var(--accent);" in styles

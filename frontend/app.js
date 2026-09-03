@@ -769,13 +769,19 @@
         meta.textContent = `版本 v${plan.version}`;
         select.append(title, meta);
         select.addEventListener("click", () => selectSavedPlan(plan));
+        const preview = document.createElement("button");
+        preview.type = "button";
+        preview.className = "saved-plan-preview";
+        preview.textContent = "查看";
+        preview.setAttribute("aria-label", `查看方案：${plan.query || "未命名方案"}`);
+        preview.addEventListener("click", () => previewSavedPlan(plan));
         const remove = document.createElement("button");
         remove.type = "button";
         remove.className = "saved-plan-delete";
         remove.textContent = "删除";
         remove.setAttribute("aria-label", `删除方案：${plan.query || "未命名方案"}`);
         remove.addEventListener("click", () => confirmSavedPlanDelete(plan));
-        item.append(select, remove);
+        item.append(select, preview, remove);
         container.appendChild(item);
       });
     } catch (requestError) { container.textContent = requestError.message; }
@@ -808,6 +814,25 @@
     currentSavedPlan = record;
     const task = { id: record.plan_id, origin: record.request.origin, destination: record.request.destination, document: record.document, status: record.document.status, preview: "已保存方案", vote: null };
     tasks.push(task); currentId = task.id; renderDocument(task, record.document); showView("task");
+  }
+
+  async function previewSavedPlan(plan) {
+    const statusElement = document.getElementById("plan-action-status");
+    try {
+      const response = await fetch(`/api/travel-plans/saved/${encodeURIComponent(plan.plan_id)}`);
+      if (!response.ok) throw new Error(await nonOkMessage(response));
+      const record = await response.json();
+      document.getElementById("plan-preview-title").textContent = `${record.query || "未命名方案"} · 方案预览`;
+      document.getElementById("plan-preview-content").innerHTML = safeMarkdown(record.document.markdown);
+      showModal(document.getElementById("plan-preview-mask"));
+    } catch (requestError) {
+      statusElement.textContent = requestError.message || "查看方案失败，请稍后重试。";
+    }
+  }
+
+  function closeSavedPlanPreview(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById("plan-preview-mask").classList.remove("show");
   }
 
   async function submitPlanRevision() {
@@ -1722,6 +1747,7 @@
   window.doDelete = doDelete;
   window.closeSavedPlanDelete = closeSavedPlanDelete;
   window.deleteSavedPlan = deleteSavedPlan;
+  window.closeSavedPlanPreview = closeSavedPlanPreview;
   window.closeAnswerModal = closeAnswerModal;
   window.openRecordsModal = openRecordsModal;
   window.closeRecordsModal = closeRecordsModal;

@@ -5,7 +5,6 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 from hashlib import md5
-from urllib.parse import urlencode
 from typing import Any
 
 import httpx
@@ -109,7 +108,8 @@ class AmapClient:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 request_params = {**params, "key": self.api_key}
                 if self.security_key:
-                    request_params["sig"] = md5((urlencode(sorted(request_params.items())) + self.security_key).encode("utf-8")).hexdigest()
+                    signature_text = "&".join(f"{key}={value}" for key, value in sorted(request_params.items()))
+                    request_params["sig"] = md5((signature_text + self.security_key).encode("utf-8")).hexdigest()
                 response = await request_with_retry(lambda: client.get(f"{self._base_url}{path}", params=request_params), max_attempts=self.max_attempts)
                 if not 200 <= response.status_code < 300:
                     raise ExternalServiceUnavailable("高德地图未返回有效数据")

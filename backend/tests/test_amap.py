@@ -1,4 +1,5 @@
 from datetime import date, timezone
+from hashlib import md5
 
 import httpx
 import pytest
@@ -44,6 +45,20 @@ async def test_maps_fixed_endpoints_and_allowed_fields():
     assert location["source_updated_at"] is None and route_result["source_updated_at"] is None
     assert location["retrieved_at"].tzinfo == timezone.utc
     assert route_result["duration_minutes"] == 10 and pois[0]["category"] == "住宿服务"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_amap_security_signature_uses_raw_chinese_parameter_values():
+    geo = respx.get(f"{BASE}/v3/geocode/geo").mock(
+        return_value=httpx.Response(
+            200,
+            json={"status": "1", "geocodes": [{"formatted_address": "成都市", "location": "104.06,30.57", "adcode": "510100"}]},
+        )
+    )
+    await client(security_key="security-secret").geocode("成都")
+    expected = md5("address=成都&key=amap-keysecurity-secret".encode("utf-8")).hexdigest()
+    assert geo.calls[0].request.url.params["sig"] == expected
 
 
 @respx.mock

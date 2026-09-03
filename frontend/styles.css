@@ -200,6 +200,8 @@
   .saved-plan-select span { color: var(--text-dim); font-size: 12px; }
   .saved-plan-select[aria-pressed="true"] { color: var(--accent); }
   .plan-management-page .saved-plan-item:has(.saved-plan-select[aria-pressed="true"]) { border-left: 3px solid var(--accent); padding-left: 12px; }
+  .saved-plan-preview { align-self: center; min-height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--accent); cursor: pointer; padding: 7px 12px; }
+  .saved-plan-preview:hover { background: #edf5ff; }
   .saved-plan-delete { align-self: center; min-height: 44px; border: 0; border-radius: 8px; background: transparent; color: #b83c3c; cursor: pointer; padding: 7px 12px; }
   .plan-revision-step { color: var(--muted, #667085); font-size: 13px; margin: 4px 0 12px; }
   .saved-plan-delete:hover { background: #fff2f2; }
