@@ -60,11 +60,18 @@
   let pendingSavedPlanDelete = null;
   let historyCollapsed = false;
   let pendingDeleteId = null;
+  let modalStackLevel = 200;
   let requestController = null;
   let requestGeneration = 0;
   let fliggyStatus = { available: false, message: "飞猪门票查询服务尚未配置" };
   let pendingFliggySubmit = false;
   const FLIGGY_CONSENT_KEY = "fliggy-ticket-query-consent";
+
+  function showModal(mask) {
+    modalStackLevel += 1;
+    mask.style.zIndex = String(modalStackLevel);
+    mask.classList.add("show");
+  }
 
   function todayIso() {
     const today = new Date();
@@ -210,7 +217,7 @@
     appendMetadata(travelContent, documentData);
     error.hidden = true;
     status.textContent = task.status === "failed" ? "规划生成失败，页面内容仅供核验。" : task.status === "degraded" ? "规划已生成，部分信息需要核验。" : documentData.status === "success" ? "规划已生成。" : "规划状态无法确认，请核验页面内容。";
-    if (activeView === "plan") travelMask.classList.add("show");
+    if (activeView === "plan") showModal(travelMask);
     renderNav();
   }
 
@@ -414,7 +421,7 @@
   function requestFliggyConsent() {
     if (hasFliggyConsent()) return true;
     pendingFliggySubmit = true;
-    fliggyConsentMask.classList.add("show");
+    showModal(fliggyConsentMask);
     return false;
   }
 
@@ -833,7 +840,7 @@
   function confirmSavedPlanDelete(plan) {
     pendingSavedPlanDelete = plan;
     document.getElementById("plan-delete-text").textContent = `确定删除“${plan.query || "未命名方案"}”吗？删除后不可恢复。`;
-    document.getElementById("plan-delete-mask").classList.add("show");
+    showModal(document.getElementById("plan-delete-mask"));
   }
 
   function closeSavedPlanDelete(event) {
@@ -934,7 +941,7 @@
     const task = tasks.find((item) => item.id === id);
     const label = task ? (task.kind === "knowledge" ? `「${task.query}」` : `「${task.origin}→${task.destination}」`) : "";
     document.getElementById("confirm-text").textContent = `确定删除${label}这条查询记录吗？删除后不可恢复。`;
-    document.getElementById("confirm-mask").classList.add("show");
+    showModal(document.getElementById("confirm-mask"));
   }
   function closeConfirm(event) {
     if (event && event.target !== event.currentTarget) return;
@@ -950,7 +957,7 @@
     if (removed.kind === "knowledge") deleteKnowledgeRecord(removed.id);
     renderNav();
   }
-  function openSettings() { document.getElementById("settings-mask").classList.add("show"); }
+  function openSettings() { showModal(document.getElementById("settings-mask")); }
   function closeSettings(event) {
     if (event && event.target !== event.currentTarget) return;
     document.getElementById("settings-mask").classList.remove("show");
@@ -1276,7 +1283,7 @@
     if (record.id) {
       renderFeedback(record, answerContent);
     }
-    answerMask.classList.add("show");
+    showModal(answerMask);
   }
 
   function closeAnswerModal(event) {
@@ -1394,7 +1401,7 @@
   async function openRecordsModal() {
     const mask = document.getElementById("records-mask");
     const list = document.getElementById("records-list");
-    mask.classList.add("show");
+    showModal(mask);
     list.replaceChildren();
     const loading = document.createElement("p");
     loading.textContent = "正在加载记录…";

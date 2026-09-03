@@ -400,6 +400,11 @@ def test_frontend_answers_markdown_via_modal_and_persists_knowledge_records():
     ):
         assert selector in styles
 
+    assert ".modal {" in styles and "overflow: hidden" in styles
+    assert ".modal-body" in styles and "overflow-y: auto" in styles
+    assert "showModal(mask)" in script
+    assert "modalStackLevel" in script
+
 
 def test_frontend_restores_rating_feedback_and_real_dashboard_stats():
     html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
